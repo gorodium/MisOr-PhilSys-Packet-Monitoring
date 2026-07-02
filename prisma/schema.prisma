@@ -1,0 +1,148 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PacketSyncStatus {
+  PENDING
+  FILED
+  NOT_FILED
+  NEEDS_REVIEW
+  ERROR
+}
+
+enum RunStatus {
+  RUNNING
+  SUCCESS
+  PARTIAL
+  ERROR
+  SKIPPED
+}
+
+enum MatchType {
+  TITLE
+  BODY
+  REPLY
+  SEARCH_RESULT
+  MANUAL
+}
+
+model Packet {
+  id                      String            @id @default(cuid())
+  packetCode              String
+  normalizedPacketCode    String            @unique
+  issueCategory           String?
+  sourceSheetRowNumber    Int
+  sourceSheetRawData      Json
+  filedInTicket           Boolean           @default(false)
+  ticketNumber            String?
+  ticketId                String?
+  latestMatrixReply       String?
+  latestMatrixReplyAuthor String?
+  latestMatrixReplyDate   DateTime?
+  syncStatus              PacketSyncStatus  @default(PENDING)
+  lastCheckedAt           DateTime?
+  matrixTicketDbId        String?
+  matrixTicket            MatrixTicket?     @relation(fields: [matrixTicketDbId], references: [id], onDelete: SetNull)
+  matches                 TicketPacketMatch[]
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+
+  @@index([issueCategory])
+  @@index([syncStatus])
+  @@index([ticketNumber])
+}
+
+model MatrixTicket {
+  id              String              @id @default(cuid())
+  ticketNumber    String              @unique
+  matrixTicketId  String              @unique
+  title           String
+  body            String
+  status          String
+  author          String?
+  createdAtMatrix DateTime?
+  updatedAtMatrix DateTime?
+  rawData         Json
+  packets         Packet[]
+  matches         TicketPacketMatch[]
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@index([status])
+  @@index([updatedAtMatrix])
+}
+
+model TicketPacketMatch {
+  id              String       @id @default(cuid())
+  packetId        String
+  matrixTicketId  String
+  matchType       MatchType
+  confidenceScore Float
+  matchedText     String
+  packet          Packet       @relation(fields: [packetId], references: [id], onDelete: Cascade)
+  matrixTicket    MatrixTicket @relation(fields: [matrixTicketId], references: [id], onDelete: Cascade)
+  createdAt       DateTime     @default(now())
+
+  @@index([packetId])
+  @@index([matrixTicketId])
+}
+
+model SyncLog {
+  id         String    @id @default(cuid())
+  syncType   String
+  status     RunStatus
+  message    String
+  details    Json?
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([syncType])
+  @@index([status])
+  @@index([startedAt])
+}
+
+model AutomationRun {
+  id             String    @id @default(cuid())
+  runType        String
+  status         RunStatus
+  packetsScanned Int       @default(0)
+  ticketsScanned Int       @default(0)
+  ticketsCreated Int       @default(0)
+  repliesSynced  Int       @default(0)
+  errors         Json?
+  startedAt      DateTime  @default(now())
+  finishedAt     DateTime?
+
+  @@index([runType])
+  @@index([status])
+  @@index([startedAt])
+}
+
+model AppSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  isSecret  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  actor     String?
+  role      String?
+  status    RunStatus
+  message   String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([action])
+  @@index([status])
+  @@index([createdAt])
+}

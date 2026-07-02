@@ -1,0 +1,10 @@
+.env
+.env*.local
+.next
+node_modules
+dist
+coverage
+*.log
+*.tsbuildinfo
+.local-postgres
+prisma/migrations/*/migration_lock.toml
