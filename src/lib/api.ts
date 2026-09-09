@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
 
 export function ok<T>(data: T, init?: ResponseInit) {
@@ -19,4 +20,9 @@ export function handleApiError(error: unknown) {
   }
 
   return fail("Unexpected server error.", 500);
+}
+
+/** Safely converts any value to a Prisma-compatible JSON input. */
+export function serializeJson(value: unknown): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value ?? {})) as Prisma.InputJsonValue;
 }

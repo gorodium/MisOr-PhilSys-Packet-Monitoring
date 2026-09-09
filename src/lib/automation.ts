@@ -1,13 +1,11 @@
-import { Packet, PacketSyncStatus, Prisma, RunStatus } from "@prisma/client";
+import { Packet, PacketSyncStatus, RunStatus } from "@prisma/client";
+import { serializeJson } from "@/lib/api";
 import { buildTicketTitle, createMatrixAdapter } from "@/lib/matrix/adapter";
 import { prisma } from "@/lib/prisma";
 import { getResolvedSettings } from "@/lib/settings";
 import { renderTicketBodyTemplate } from "@/lib/template";
 import { syncMatrixMatches } from "@/lib/matching";
 
-function serializeJson(value: unknown): Prisma.InputJsonValue {
-  return JSON.parse(JSON.stringify(value ?? {})) as Prisma.InputJsonValue;
-}
 
 async function getTicketCandidates(packetIds?: string[]) {
   return prisma.packet.findMany({

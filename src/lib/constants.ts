@@ -4,7 +4,6 @@ export const ISSUE_FILTERS = [
   "All",
   "Not Generated",
   "Data Usage Expired",
-  "RINF",
   "Unclickable",
   "Updating Issue"
 ] as const;

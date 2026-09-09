@@ -138,6 +138,13 @@ export function SettingsClient() {
             </label>
           ))}
         </div>
+        {values["matrixMode"] === "browser" ? (
+          <div className="alert" style={{ margin: "0 14px 14px", borderColor: "#f59e0b" }}>
+            ⚠️ <strong>Browser mode is not yet implemented.</strong> Selecting this mode will cause all sync
+            and automation operations to fail with an error. Use <strong>demo</strong> for local testing or{" "}
+            <strong>http</strong> for a real Matrix API.
+          </div>
+        ) : null}
       </section>
     </>
   );

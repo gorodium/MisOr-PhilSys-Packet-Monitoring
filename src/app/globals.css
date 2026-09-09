@@ -120,6 +120,12 @@ button {
   background: rgba(255, 255, 255, 0.08);
 }
 
+.nav-link-active {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  font-weight: 600;
+}
+
 .main-panel {
   min-width: 0;
   padding: 22px;
@@ -305,6 +311,31 @@ button {
 
 .table-wrap {
   overflow-x: auto;
+}
+
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+}
+
+.pagination-info {
+  font-size: 13px;
+}
+
+.pagination-pages {
+  font-size: 13px;
+}
+
+.pagination-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 13px;
 }
 
 .data-table {

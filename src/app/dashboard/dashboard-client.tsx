@@ -1,11 +1,11 @@
 "use client";
 
-import { RefreshCw, Search, SlidersHorizontal } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, RefreshCw, Search, SlidersHorizontal } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StatusBadge } from "@/components/status-badge";
+import { ISSUE_FILTERS } from "@/lib/constants";
 
-const issueFilters = ["All", "Not Generated", "Data Usage Expired", "RINF", "Unclickable", "Updating Issue"];
 const statusFilters = [
   { value: "", label: "All Statuses" },
   { value: "FILED", label: "Filed" },
@@ -14,10 +14,64 @@ const statusFilters = [
   { value: "ERROR", label: "Error" }
 ];
 
+const remarksFilters = [
+  { value: "", label: "All Remarks" },
+  { value: "available_to_download", label: "Available to Download" },
+  { value: "for_backend_restoration", label: "For Backend Restoration" },
+  { value: "still_in_process", label: "Still in Process" },
+  { value: "potential_duplicate", label: "Potential Duplicate" },
+  { value: "biometrics_issue", label: "Biometrics Issue" },
+  { value: "authentication_failed", label: "Authentication Failed" },
+];
+
+type RemarksBadge = {
+  label: string;
+  bg: string;
+  color: string;
+};
+
+function detectRemarksBadge(reply: string | null): RemarksBadge | null {
+  if (!reply) return null;
+  const r = reply.toLowerCase();
+  if (r.includes("available to download") || r.includes("available for download"))
+    return { label: "Available to Download", bg: "#dcfce7", color: "#166534" };
+  if (r.includes("backend restoration") || r.includes("for backend restoration"))
+    return { label: "For Backend Restoration", bg: "#ffedd5", color: "#9a3412" };
+  if (r.includes("still processing on the backend") || r.includes("still in process") || r.includes("awaiting") || r.includes("still processing"))
+    return { label: "Still in Process", bg: "#dbeafe", color: "#1e40af" };
+  if (r.includes("potential duplicate") || r.includes("duplicate match") || r.includes("identified with a potential duplicate"))
+    return { label: "Potential Duplicate", bg: "#f3e8ff", color: "#6b21a8" };
+  if (r.includes("biometrics") || r.includes("biometric"))
+    return { label: "Biometrics Issue", bg: "#fef9c3", color: "#854d0e" };
+  if (r.includes("individual authentication") || r.includes("authentication was unsuccessful"))
+    return { label: "Authentication Failed", bg: "#ffe4e6", color: "#9f1239" };
+  return null;
+}
+
+function matchesRemarksFilter(reply: string | null, filter: string): boolean {
+  if (!filter) return true;
+  if (!reply) return false;
+  const r = reply.toLowerCase();
+  switch (filter) {
+    case "available_to_download": return r.includes("available to download") || r.includes("available for download");
+    case "for_backend_restoration": return r.includes("backend restoration") || r.includes("for backend restoration");
+    case "still_in_process": return r.includes("still processing on the backend") || r.includes("still in process") || r.includes("awaiting") || r.includes("still processing");
+    case "potential_duplicate": return r.includes("potential duplicate") || r.includes("duplicate match") || r.includes("identified with a potential duplicate");
+    case "biometrics_issue": return r.includes("biometrics") || r.includes("biometric");
+    case "authentication_failed": return r.includes("individual authentication") || r.includes("authentication was unsuccessful");
+    default: return true;
+  }
+}
+
+
+
+const PAGE_SIZE = 100;
+
 type PacketRow = {
   id: string;
   normalizedPacketCode: string;
   issueCategory: string | null;
+  proLptFolder: string;
   syncStatus: string;
   statusLabel: string;
   ticketNumber: string | null;
@@ -26,8 +80,15 @@ type PacketRow = {
   lastCheckedAt: string | null;
 };
 
+
 type PacketResponse = {
   packets: PacketRow[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
   counts: {
     total: number;
     filed: number;
@@ -41,14 +102,8 @@ type PacketResponse = {
 
 const emptyResponse: PacketResponse = {
   packets: [],
-  counts: {
-    total: 0,
-    filed: 0,
-    notFiled: 0,
-    needsReview: 0,
-    withLatestReply: 0,
-    errors: 0
-  },
+  pagination: { page: 1, pageSize: PAGE_SIZE, total: 0, totalPages: 1 },
+  counts: { total: 0, filed: 0, notFiled: 0, needsReview: 0, withLatestReply: 0, errors: 0 },
   lastSyncedAt: null
 };
 
@@ -65,33 +120,56 @@ function formatDate(value: string | null) {
 
 export function DashboardClient() {
   const router = useRouter();
+
+  // Filters — these reset the page when changed
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [status, setStatus] = useState("");
+  const [remarksFilter, setRemarksFilter] = useState("");
+  const [page, setPage] = useState(1);
+
   const [data, setData] = useState<PacketResponse>(emptyResponse);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
 
+  // Debounce search input: wait 300ms after the user stops typing before applying
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function handleSearchChange(value: string) {
+    setSearchInput(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setSearch(value);
+      setPage(1); // reset to first page on new search
+    }, 300);
+  }
+
+  // Reset page when filter dropdowns change
+  function handleCategoryChange(value: string) {
+    setCategory(value);
+    setPage(1);
+  }
+  function handleStatusChange(value: string) {
+    setStatus(value);
+    setPage(1);
+  }
+
   const query = useMemo(() => {
     const params = new URLSearchParams();
-    if (search) {
-      params.set("search", search);
-    }
-    if (category !== "All") {
-      params.set("category", category);
-    }
-    if (status) {
-      params.set("status", status);
-    }
+    if (search) params.set("search", search);
+    if (category !== "All") params.set("category", category);
+    if (status) params.set("status", status);
+    params.set("page", String(page));
+    params.set("pageSize", String(PAGE_SIZE));
     return params.toString();
-  }, [category, search, status]);
+  }, [category, search, status, page]);
 
   const loadPackets = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`/api/packets${query ? `?${query}` : ""}`, { cache: "no-store" });
+      const response = await fetch(`/api/packets?${query}`, { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok) {
         throw new Error(payload.error ?? "Failed to load packets.");
@@ -108,6 +186,7 @@ export function DashboardClient() {
     void loadPackets();
   }, [loadPackets]);
 
+  // SSE stream: refresh data when a sync event is received
   useEffect(() => {
     const events = new EventSource("/api/events");
     events.addEventListener("sync", () => {
@@ -134,13 +213,17 @@ export function DashboardClient() {
     }
   }
 
+  const { pagination, counts } = data;
+  const rowStart = pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.pageSize + 1;
+  const rowEnd = Math.min(pagination.page * pagination.pageSize, pagination.total);
+
   const kpis = [
-    ["Total Packets", data.counts.total],
-    ["Filed in Ticket", data.counts.filed],
-    ["Not Filed", data.counts.notFiled],
-    ["Needs Review", data.counts.needsReview],
-    ["With Latest Reply", data.counts.withLatestReply],
-    ["Sync Errors", data.counts.errors]
+    ["Total Packets", counts.total],
+    ["Filed in Ticket", counts.filed],
+    ["Not Filed", counts.notFiled],
+    ["Needs Review", counts.needsReview],
+    ["With Latest Reply", counts.withLatestReply],
+    ["Sync Errors", counts.errors]
   ];
 
   return (
@@ -152,7 +235,7 @@ export function DashboardClient() {
         </div>
         <button className="btn btn-primary" onClick={syncNow} disabled={syncing} title="Sync now">
           <RefreshCw size={16} />
-          {syncing ? "Syncing" : "Sync Now"}
+          {syncing ? "Syncing…" : "Sync Now"}
         </button>
       </header>
 
@@ -169,23 +252,46 @@ export function DashboardClient() {
         <div className="toolbar-group">
           <Search size={16} className="muted" />
           <input
+            id="dashboard-search"
             className="input search-input"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            value={searchInput}
+            onChange={(event) => handleSearchChange(event.target.value)}
             placeholder="Search packet code"
           />
         </div>
         <div className="toolbar-group">
           <SlidersHorizontal size={16} className="muted" />
-          <select className="select" value={category} onChange={(event) => setCategory(event.target.value)}>
-            {issueFilters.map((filter) => (
+          <select
+            id="dashboard-category-filter"
+            className="select"
+            value={category}
+            onChange={(event) => handleCategoryChange(event.target.value)}
+          >
+            {ISSUE_FILTERS.map((filter) => (
               <option key={filter} value={filter}>
                 {filter}
               </option>
             ))}
           </select>
-          <select className="select" value={status} onChange={(event) => setStatus(event.target.value)}>
+          <select
+            id="dashboard-status-filter"
+            className="select"
+            value={status}
+            onChange={(event) => handleStatusChange(event.target.value)}
+          >
             {statusFilters.map((filter) => (
+              <option key={filter.value} value={filter.value}>
+                {filter.label}
+              </option>
+            ))}
+          </select>
+          <select
+            id="dashboard-remarks-filter"
+            className="select"
+            value={remarksFilter}
+            onChange={(event) => { setRemarksFilter(event.target.value); setPage(1); }}
+          >
+            {remarksFilters.map((filter) => (
               <option key={filter.value} value={filter.value}>
                 {filter.label}
               </option>
@@ -203,20 +309,28 @@ export function DashboardClient() {
       <section className="panel">
         <div className="panel-header">
           <h2 className="panel-title">Packets</h2>
-          <span className="muted">{loading ? "Loading" : `${data.packets.length} shown`}</span>
+          <div className="pagination-info muted">
+            {loading
+              ? "Loading…"
+              : pagination.total === 0
+                ? "No packets found"
+                : `${rowStart}–${rowEnd} of ${pagination.total.toLocaleString()}`}
+          </div>
         </div>
         <div className="table-wrap">
           <table className="data-table">
             <thead>
               <tr>
                 <th style={{ width: "22%" }}>Packet</th>
-                <th style={{ width: "18%" }}>Status if Filed in a Ticket or Not</th>
+                <th style={{ width: "18%" }}>Status</th>
                 <th style={{ width: "16%" }}>Ticket Number</th>
                 <th>Remarks</th>
               </tr>
             </thead>
             <tbody>
-              {data.packets.map((packet) => (
+              {data.packets.filter(packet => matchesRemarksFilter(packet.latestMatrixReply, remarksFilter)).map((packet) => {
+                const badge = detectRemarksBadge(packet.latestMatrixReply);
+                return (
                 <tr
                   key={packet.id}
                   className="clickable-row"
@@ -226,11 +340,34 @@ export function DashboardClient() {
                   <td>
                     <strong className="mono">{packet.normalizedPacketCode}</strong>
                     <div className="muted">{packet.issueCategory ?? "Unspecified"}</div>
+                    {packet.proLptFolder ? (
+                      <div className="muted" style={{ fontSize: "0.75rem", marginTop: "4px" }}>
+                        <span style={{ border: "1px solid currentColor", padding: "2px 6px", borderRadius: "4px" }}>
+                          {packet.proLptFolder}
+                        </span>
+                      </div>
+                    ) : null}
+                    {badge && (
+                      <div style={{ marginTop: "4px" }}>
+                        <span style={{
+                          display: "inline-block",
+                          padding: "2px 8px",
+                          borderRadius: "9999px",
+                          fontSize: "0.7rem",
+                          fontWeight: 600,
+                          backgroundColor: badge.bg,
+                          color: badge.color,
+                          letterSpacing: "0.02em"
+                        }}>
+                          {badge.label}
+                        </span>
+                      </div>
+                    )}
                   </td>
                   <td>
                     <StatusBadge status={packet.syncStatus} label={packet.statusLabel} />
                   </td>
-                  <td className="mono">{packet.ticketNumber ?? "None"}</td>
+                  <td className="mono">{packet.ticketNumber ?? "—"}</td>
                   <td className="remarks-cell">
                     {packet.latestMatrixReply ? (
                       <>
@@ -244,19 +381,46 @@ export function DashboardClient() {
                     )}
                   </td>
                 </tr>
-              ))}
-              {!loading && data.packets.length === 0 ? (
+                );
+              })}
+              {!loading && data.packets.filter(p => matchesRemarksFilter(p.latestMatrixReply, remarksFilter)).length === 0 ? (
                 <tr>
                   <td colSpan={4} className="muted">
-                    No packets found.
+                    No packets match the current filters.
                   </td>
                 </tr>
               ) : null}
             </tbody>
           </table>
         </div>
+
+        {/* Pagination controls */}
+        {pagination.totalPages > 1 ? (
+          <div className="pagination-bar">
+            <button
+              className="btn btn-ghost pagination-btn"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1 || loading}
+              title="Previous page"
+            >
+              <ChevronLeft size={16} />
+              Prev
+            </button>
+            <span className="pagination-pages muted">
+              Page {pagination.page} of {pagination.totalPages.toLocaleString()}
+            </span>
+            <button
+              className="btn btn-ghost pagination-btn"
+              onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
+              disabled={page >= pagination.totalPages || loading}
+              title="Next page"
+            >
+              Next
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        ) : null}
       </section>
     </>
   );
 }
-

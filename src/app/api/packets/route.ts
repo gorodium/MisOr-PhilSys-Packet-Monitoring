@@ -3,16 +3,21 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { fail, handleApiError, ok } from "@/lib/api";
 import { STATUS_LABELS } from "@/lib/constants";
-import { normalizePacketCode } from "@/lib/packet-normalizer";
+import { normalizePacketCode, machineFolderForPacket } from "@/lib/packet-normalizer";
 import { prisma } from "@/lib/prisma";
 import { assertRateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
+const MAX_PAGE_SIZE = 500;
+const DEFAULT_PAGE_SIZE = 100;
+
 const packetQuerySchema = z.object({
   search: z.string().optional(),
   category: z.string().optional(),
-  status: z.string().optional()
+  status: z.string().optional(),
+  page: z.coerce.number().int().min(1).optional().default(1),
+  pageSize: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).optional().default(DEFAULT_PAGE_SIZE)
 });
 
 function parseStatus(value: string | undefined) {
@@ -50,12 +55,26 @@ export async function GET(request: NextRequest) {
         : {})
     };
 
-    const [packets, total, filed, notFiled, needsReview, errors, withLatestReply, latestSync] = await Promise.all([
+    const skip = (query.page - 1) * query.pageSize;
+
+    const [
+      packets,
+      filteredTotal,
+      total,
+      filed,
+      notFiled,
+      needsReview,
+      errors,
+      withLatestReply,
+      latestSync
+    ] = await Promise.all([
       prisma.packet.findMany({
         where,
         orderBy: [{ issueCategory: "asc" }, { sourceSheetRowNumber: "asc" }],
-        take: 500
+        skip,
+        take: query.pageSize
       }),
+      prisma.packet.count({ where }),
       prisma.packet.count(),
       prisma.packet.count({ where: { syncStatus: PacketSyncStatus.FILED } }),
       prisma.packet.count({ where: { syncStatus: PacketSyncStatus.NOT_FILED } }),
@@ -68,11 +87,20 @@ export async function GET(request: NextRequest) {
       })
     ]);
 
+    const totalPages = Math.max(1, Math.ceil(filteredTotal / query.pageSize));
+
     return ok({
       packets: packets.map((packet) => ({
         ...packet,
-        statusLabel: STATUS_LABELS[packet.syncStatus]
+        statusLabel: STATUS_LABELS[packet.syncStatus],
+        proLptFolder: machineFolderForPacket(packet.normalizedPacketCode)
       })),
+      pagination: {
+        page: query.page,
+        pageSize: query.pageSize,
+        total: filteredTotal,
+        totalPages
+      },
       counts: {
         total,
         filed,
@@ -87,4 +115,3 @@ export async function GET(request: NextRequest) {
     return handleApiError(error);
   }
 }
-

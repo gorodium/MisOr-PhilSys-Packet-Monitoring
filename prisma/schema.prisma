@@ -146,3 +146,22 @@ model AuditLog {
   @@index([status])
   @@index([createdAt])
 }
+
+model MatrixFilingRequest {
+  id             String    @id @default(cuid())
+  trn            String
+  actionType     String    // "Updating" or "Not Updating"
+  remarks        String
+  firstName      String?
+  middleName     String?
+  lastName       String?
+  sex            String?
+  birthday       DateTime?
+  status         String    @default("PENDING") // PENDING, FILED, ERROR
+  matrixTicketId String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([trn])
+  @@index([status])
+}

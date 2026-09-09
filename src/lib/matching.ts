@@ -1,7 +1,8 @@
-import { MatchType, Packet, PacketSyncStatus, Prisma, RunStatus } from "@prisma/client";
+import { MatchType, Packet, PacketSyncStatus, RunStatus } from "@prisma/client";
+import { serializeJson } from "@/lib/api";
 import { createMatrixAdapter } from "@/lib/matrix/adapter";
 import { MatrixTicketRecord, RelevantReply } from "@/lib/matrix/types";
-import { normalizePacketCode } from "@/lib/packet-normalizer";
+import { normalizePacketCode, extractLikelyPacketCodes } from "@/lib/packet-normalizer";
 import { prisma } from "@/lib/prisma";
 import { writePacketUpdatesToSheet } from "@/lib/google-sheets";
 
@@ -12,9 +13,6 @@ type TicketMatch = {
   relevantReplies: RelevantReply[];
 };
 
-function serializeJson(value: unknown): Prisma.InputJsonValue {
-  return JSON.parse(JSON.stringify(value ?? {})) as Prisma.InputJsonValue;
-}
 
 function ticketContainsPacket(ticket: MatrixTicketRecord, packetCode: string) {
   const normalizedPacketCode = normalizePacketCode(packetCode);
@@ -56,6 +54,7 @@ async function upsertMatrixTicket(ticket: MatrixTicketRecord) {
 
 async function findMatchesForPacket(packet: Packet) {
   const adapter = await createMatrixAdapter();
+  // Search all statuses (not just open) so we find the latest ticket even if older ones exist
   const searchedTickets = await adapter.searchTicketsByPacket(packet.normalizedPacketCode);
   const allTickets = searchedTickets.length > 0 ? searchedTickets : await adapter.fetchTickets();
   const matches: TicketMatch[] = [];
@@ -80,6 +79,22 @@ async function findMatchesForPacket(packet: Packet) {
       matchType: packetInTicket ? MatchType.BODY : MatchType.REPLY,
       relevantReplies
     });
+  }
+
+  // If multiple matches, prefer the latest OPEN ticket over closed ones
+  if (matches.length > 1) {
+    const closedKeywords = ["closed", "resolved", "rejected", "done"];
+    const openMatches = matches.filter(m => {
+      const status = (m.ticket.status ?? "").toLowerCase();
+      return !closedKeywords.some(k => status.includes(k));
+    });
+    if (openMatches.length === 1) {
+      return openMatches; // Resolved to a single open ticket
+    }
+    // If still multiple, sort by updatedAtMatrix descending and return all
+    matches.sort((a, b) =>
+      (b.ticket.updatedAtMatrix?.getTime() ?? 0) - (a.ticket.updatedAtMatrix?.getTime() ?? 0)
+    );
   }
 
   return matches;
@@ -220,13 +235,129 @@ export async function syncMatrixMatches(input: { packetIds?: string[]; writeBack
 }
 
 export async function runFullSync() {
-  const { syncGoogleSheetPackets } = await import("@/lib/google-sheets");
-  const sheetResult = await syncGoogleSheetPackets();
-  const matrixResult = await syncMatrixMatches({ writeBack: true });
+  const startedAt = new Date();
+  const log = await prisma.syncLog.create({
+    data: {
+      syncType: "MATRIX_TO_DB_SYNC",
+      status: RunStatus.RUNNING,
+      message: "Fetching Matrix tickets to populate packets.",
+      startedAt
+    }
+  });
 
-  return {
-    sheetResult,
-    matrixResult
-  };
+  try {
+    const adapter = await createMatrixAdapter();
+    const allTickets = await adapter.fetchTickets();
+    const results = [];
+    const errors = [];
+
+    // Clear matches to recreate them
+    await prisma.ticketPacketMatch.deleteMany();
+
+    for (const ticket of allTickets) {
+      try {
+        const detailedTicket = (await adapter.fetchTicketDetails(ticket.matrixTicketId)) ?? ticket;
+        const dbTicket = await upsertMatrixTicket(detailedTicket);
+
+        // 1. Extract packets from the main ticket text
+        const titleBodyCodes = adapter.extractPacketCodesFromTicket(detailedTicket);
+        for (const code of titleBodyCodes) {
+          await upsertPacketFromMatrix(code, dbTicket, detailedTicket, null, MatchType.BODY);
+        }
+
+        // 2. Extract packets from all replies
+        const replies = await adapter.fetchTicketReplies(detailedTicket.matrixTicketId);
+        for (const reply of replies) {
+          const replyCodes = extractLikelyPacketCodes(reply.body || "");
+          for (const code of replyCodes) {
+            await upsertPacketFromMatrix(code, dbTicket, detailedTicket, reply, MatchType.REPLY);
+          }
+        }
+
+        results.push({ ticketId: ticket.matrixTicketId });
+      } catch (err) {
+        errors.push({ ticketId: ticket.matrixTicketId, message: err instanceof Error ? err.message : String(err) });
+      }
+    }
+
+    const finalStatus = errors.length === 0 ? RunStatus.SUCCESS : results.length > 0 ? RunStatus.PARTIAL : RunStatus.ERROR;
+    
+    await prisma.syncLog.update({
+      where: { id: log.id },
+      data: {
+        status: finalStatus,
+        message: `Synced packets from ${allTickets.length} Matrix tickets.`,
+        details: { ticketsScanned: allTickets.length, results, errors },
+        finishedAt: new Date()
+      }
+    });
+
+    return { matrixResult: { results, errors } };
+  } catch (error) {
+    await prisma.syncLog.update({
+      where: { id: log.id },
+      data: {
+        status: RunStatus.ERROR,
+        message: error instanceof Error ? error.message : "Sync failed.",
+        finishedAt: new Date()
+      }
+    });
+    throw error;
+  }
+}
+
+async function upsertPacketFromMatrix(
+  packetCode: string,
+  dbTicket: any,
+  matrixTicket: MatrixTicketRecord,
+  reply: any,
+  matchType: MatchType
+) {
+  const normalized = normalizePacketCode(packetCode);
+  
+  // Upsert the packet itself
+  const packet = await prisma.packet.upsert({
+    where: { normalizedPacketCode: normalized },
+    create: {
+      packetCode: packetCode,
+      normalizedPacketCode: normalized,
+      issueCategory: matrixTicket.title.substring(0, 50),
+      sourceSheetRowNumber: 0,
+      sourceSheetRawData: {},
+      syncStatus: PacketSyncStatus.FILED,
+      filedInTicket: true,
+      ticketNumber: matrixTicket.ticketNumber,
+      ticketId: matrixTicket.matrixTicketId,
+      matrixTicketDbId: dbTicket.id,
+      latestMatrixReply: reply?.body || null,
+      latestMatrixReplyAuthor: reply?.author || null,
+      latestMatrixReplyDate: reply?.createdAt || null,
+      lastCheckedAt: new Date()
+    },
+    update: {
+      syncStatus: PacketSyncStatus.FILED,
+      filedInTicket: true,
+      ticketNumber: matrixTicket.ticketNumber,
+      ticketId: matrixTicket.matrixTicketId,
+      matrixTicketDbId: dbTicket.id,
+      latestMatrixReply: reply?.body || null,
+      latestMatrixReplyAuthor: reply?.author || null,
+      latestMatrixReplyDate: reply?.createdAt || null,
+      lastCheckedAt: new Date()
+    }
+  });
+
+  // Create the match record
+  await prisma.ticketPacketMatch.create({
+    data: {
+      packetId: packet.id,
+      matrixTicketId: dbTicket.id,
+      matchType: matchType,
+      confidenceScore: 1,
+      matchedText: (reply?.body || matrixTicket.body || "").slice(0, 4000)
+    }
+  });
+
+  return packet;
 }
 

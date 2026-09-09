@@ -14,18 +14,23 @@ function defaultRole() {
 }
 
 export function proxy(request: NextRequest) {
-  const trustedAuthHeader = readBooleanEnv("TRUSTED_AUTH_HEADER");
-  const roleHeader = process.env.AUTH_ROLE_HEADER ?? "x-philsys-role";
-  const role = trustedAuthHeader ? request.headers.get(roleHeader) ?? defaultRole() : defaultRole();
-
-  if (role.toLowerCase() !== "admin") {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+  const authCookie = request.cookies.get("admin_auth")?.value;
+  if (authCookie === "authenticated") {
+    return NextResponse.next();
   }
 
-  return NextResponse.next();
+  const trustedAuthHeader = readBooleanEnv("TRUSTED_AUTH_HEADER");
+  if (trustedAuthHeader) {
+    const roleHeader = process.env.AUTH_ROLE_HEADER ?? "x-philsys-role";
+    const role = request.headers.get(roleHeader);
+    if (role?.toLowerCase() === "admin") {
+      return NextResponse.next();
+    }
+  }
+
+  return NextResponse.redirect(new URL("/login", request.url));
 }
 
 export const config = {
   matcher: ["/automation/:path*", "/settings/:path*", "/logs/:path*"]
 };
-

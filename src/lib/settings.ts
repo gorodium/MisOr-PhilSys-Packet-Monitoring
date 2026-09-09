@@ -89,6 +89,22 @@ export const settingDefinitions: SettingDefinition[] = [
     options: ["demo", "http", "browser"]
   },
   {
+    key: "matrixApiKey",
+    label: "Matrix API key (Redmine)",
+    envName: "MATRIX_API_KEY",
+    fallback: "",
+    type: "text",
+    isSecret: true
+  },
+  {
+    key: "matrixProjectId",
+    label: "Matrix project ID",
+    envName: "MATRIX_PROJECT_ID",
+    fallback: "philsys-it-support-ticketing-2026",
+    type: "text",
+    required: true
+  },
+  {
     key: "syncIntervalSeconds",
     label: "Sync interval",
     envName: "SYNC_INTERVAL_SECONDS",

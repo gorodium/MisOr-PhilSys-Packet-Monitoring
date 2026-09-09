@@ -28,6 +28,13 @@ export type CreateTicketInput = {
   packet: Pick<Packet, "id" | "normalizedPacketCode" | "issueCategory" | "sourceSheetRowNumber">;
   title: string;
   body: string;
+  trackerId?: number;
+  statusId?: number;
+  priorityId?: number;
+  assigneeId?: number;
+  categoryId?: number;
+  startDate?: string;
+  dueDate?: string;
 };
 
 export type MatrixAdapter = {

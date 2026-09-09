@@ -81,19 +81,23 @@ function valuesToRows(values: string[][], settings: ResolvedSettings): SheetRead
 
 async function getSheetsClient() {
   const email = readEnv("GOOGLE_SERVICE_ACCOUNT_EMAIL");
-  const privateKey = readEnv("GOOGLE_PRIVATE_KEY").replace(/\\n/g, "\n");
+  const privateKey = readEnv("GOOGLE_PRIVATE_KEY")?.replace(/\\n/g, "\n");
+  const apiKey = readEnv("GOOGLE_API_KEY");
 
-  if (!email || !privateKey) {
-    throw new Error("Google service account credentials are not configured.");
+  if (email && privateKey) {
+    const auth = new google.auth.JWT({
+      email,
+      key: privateKey,
+      scopes: ["https://www.googleapis.com/auth/spreadsheets"]
+    });
+    return google.sheets({ version: "v4", auth });
   }
 
-  const auth = new google.auth.JWT({
-    email,
-    key: privateKey,
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"]
-  });
+  if (apiKey) {
+    return google.sheets({ version: "v4", auth: apiKey });
+  }
 
-  return google.sheets({ version: "v4", auth });
+  throw new Error("Google credentials are not configured. Provide Service Account or API Key.");
 }
 
 async function readRowsFromGoogle(settings: ResolvedSettings) {
@@ -237,6 +241,21 @@ export async function writePacketUpdatesToSheet(packetIds?: string[]) {
         data: {
           status: RunStatus.SKIPPED,
           message: "Google Sheets writeback skipped in demo mode or without a spreadsheet ID.",
+          details: { packetsConsidered: packets.length },
+          finishedAt: new Date()
+        }
+      });
+      return { updatedCells: 0, skipped: true };
+    }
+
+    const email = readEnv("GOOGLE_SERVICE_ACCOUNT_EMAIL");
+    const privateKey = readEnv("GOOGLE_PRIVATE_KEY");
+    if (!email || !privateKey) {
+      await prisma.syncLog.update({
+        where: { id: log.id },
+        data: {
+          status: RunStatus.SKIPPED,
+          message: "Google Sheets writeback skipped because Service Account credentials are not configured. API Key is for read-only access.",
           details: { packetsConsidered: packets.length },
           finishedAt: new Date()
         }
