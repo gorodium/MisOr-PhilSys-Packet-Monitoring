@@ -118,7 +118,7 @@ function formatDate(value: string | null) {
   }).format(new Date(value));
 }
 
-export function DashboardClient() {
+export function DashboardClient({ isAdmin = false }: { isAdmin?: boolean }) {
   const router = useRouter();
 
   // Filters — these reset the page when changed
@@ -233,10 +233,12 @@ export function DashboardClient() {
           <h1 className="page-title">Live Monitoring Board</h1>
           <p className="page-kicker">Last synced: {formatDate(data.lastSyncedAt)}</p>
         </div>
-        <button className="btn btn-primary" onClick={syncNow} disabled={syncing} title="Sync now">
-          <RefreshCw size={16} />
-          {syncing ? "Syncing…" : "Sync Now"}
-        </button>
+        {isAdmin && (
+          <button className="btn btn-primary" onClick={syncNow} disabled={syncing} title="Sync now">
+            <RefreshCw size={16} />
+            {syncing ? "Syncing..." : "Sync Now"}
+          </button>
+        )}
       </header>
 
       <section className="kpi-grid" aria-label="Packet counts">
