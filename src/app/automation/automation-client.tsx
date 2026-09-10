@@ -324,7 +324,7 @@ export function AutomationClient() {
             </section>
           </div>
         </>
-      ) : (
+      ) : mode === "auto" ? (
         <section className="panel">
           <div className="panel-header">
             <h2 className="panel-title">Auto Mode</h2>
