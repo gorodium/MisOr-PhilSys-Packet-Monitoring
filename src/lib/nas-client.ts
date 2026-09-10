@@ -1,4 +1,4 @@
-﻿import { Client } from "ssh2";
+import { Client } from "ssh2";
 import posixPath from "path/posix";
 
 export interface NasHost {
@@ -172,16 +172,18 @@ export async function copyPacketToDestination(
 
     // Stream: read from source, write to dest
     await new Promise<void>((resolve, reject) => {
-      srcSftp.createReadStream(sourceRemotePath, (err, readStream) => {
-        if (err) { console.error("Read stream error:", err); return reject(err); }
-        dstSftp.createWriteStream(destPath, (err2, writeStream) => {
-          if (err2) { console.error("Write stream error:", err2); return reject(err2); }
-          readStream.on("error", reject);
-          writeStream.on("error", reject);
-          writeStream.on("close", resolve);
-          readStream.pipe(writeStream);
-        });
-      });
+      try {
+        const readStream = srcSftp.createReadStream(sourceRemotePath);
+        const writeStream = dstSftp.createWriteStream(destPath);
+
+        readStream.on("error", reject);
+        writeStream.on("error", reject);
+        writeStream.on("close", resolve);
+
+        readStream.pipe(writeStream);
+      } catch (err) {
+        reject(err);
+      }
     });
 
     return destPath;
