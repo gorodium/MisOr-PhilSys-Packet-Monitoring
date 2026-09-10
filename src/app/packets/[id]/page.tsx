@@ -13,6 +13,14 @@ function formatDate(value: Date | string | null | undefined) {
   return new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
+function formatDateOnly(value: Date | string | null | undefined) {
+  if (!value) {
+    return "None";
+  }
+
+  return new Intl.DateTimeFormat("en-PH", { dateStyle: "medium" }).format(new Date(value));
+}
+
 export default async function PacketDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = await params;
   const packet = await prisma.packet.findUnique({
@@ -115,7 +123,7 @@ export default async function PacketDetailPage({ params }: { params: Promise<{ i
             {filingRequest.birthday && (
               <div>
                 <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginBottom: 2 }}>Birthday</div>
-                <div style={{ fontSize: "0.85rem" }}>{formatDate(filingRequest.birthday)}</div>
+                <div style={{ fontSize: "0.85rem" }}>{formatDateOnly(filingRequest.birthday)}</div>
               </div>
             )}
           </div>
