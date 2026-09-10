@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, Bot, FileClock, LayoutDashboard, Settings, FilePlus, Menu, X, LogOut, LogIn } from "lucide-react";
+import { Activity, FileClock, LayoutDashboard, Settings, FilePlus, Menu, X, LogOut, LogIn, HardDriveDownload, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode, useState, useEffect } from "react";
@@ -9,7 +9,7 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/filing", label: "Matrix Filing", icon: FilePlus },
   { href: "/dashboard/requests", label: "Requests", icon: FileClock },
-  { href: "/automation", label: "Automation", icon: Bot, adminOnly: true },
+  { href: "/automation", label: "Backend Restoration", icon: HardDriveDownload, adminOnly: true },
   { href: "/settings", label: "Settings", icon: Settings, adminOnly: true },
   { href: "/logs", label: "Logs", icon: FileClock, adminOnly: true }
 ];
