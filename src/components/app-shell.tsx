@@ -1,6 +1,7 @@
 "use client";
 
-import { Activity, FileClock, LayoutDashboard, Settings, FilePlus, Menu, X, LogOut, LogIn, HardDriveDownload, AlertTriangle } from "lucide-react";
+import { FileClock, LayoutDashboard, Settings, FilePlus, Menu, X, LogOut, LogIn, HardDriveDownload } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode, useState, useEffect } from "react";
@@ -34,10 +35,8 @@ export function AppShell({ children, isAdmin }: { children: ReactNode, isAdmin?:
       {/* Mobile Top Bar */}
       <div className="mobile-topbar" style={{ display: "none", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", background: "#101820", color: "white", position: "sticky", top: 0, zIndex: 40 }}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <div className="brand-mark">
-            <Activity size={18} />
-          </div>
-          <span style={{ fontWeight: 600, fontSize: "14px" }}>PhilSys Matrix</span>
+          <Image src="/logo.jpg" alt="MisOr PhilSys Logo" width={32} height={32} style={{ borderRadius: "50%" }} />
+          <span style={{ fontWeight: 600, fontSize: "14px" }}>MisOr PhilSys</span>
         </div>
         <button 
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)} 
@@ -60,12 +59,12 @@ export function AppShell({ children, isAdmin }: { children: ReactNode, isAdmin?:
       {/* Sidebar */}
       <aside className={`sidebar ${mobileMenuOpen ? "sidebar-open" : ""}`}>
         <Link href="/dashboard" className="brand" style={{ padding: "12px 12px 24px", borderBottom: "1px solid rgba(255, 255, 255, 0.08)", marginBottom: "16px" }}>
-          <span className="brand-mark">
-            <Activity size={18} />
+          <span className="brand-mark" style={{ background: "transparent", padding: 0 }}>
+            <Image src="/logo.jpg" alt="MisOr PhilSys Logo" width={36} height={36} style={{ borderRadius: "50%", display: "block" }} />
           </span>
           <span style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-            <strong style={{ fontSize: "14px", fontWeight: 600, letterSpacing: "0.01em" }}>PhilSys Packet Matrix</strong>
-            <small style={{ fontSize: "12px", color: "#94a3b8" }}>Monitoring System</small>
+            <strong style={{ fontSize: "14px", fontWeight: 600, letterSpacing: "0.01em" }}>MisOr PhilSys</strong>
+            <small style={{ fontSize: "12px", color: "#94a3b8" }}>Packet Monitoring System</small>
           </span>
         </Link>
         <nav className="nav-list" aria-label="Main navigation" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>

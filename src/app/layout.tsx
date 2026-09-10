@@ -4,8 +4,8 @@ import { AppShell } from "@/components/app-shell";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "PhilSys Packet Matrix Monitoring System",
-  description: "Internal PhilSys packet monitoring and Matrix automation application"
+  title: "MisOr PhilSys Packet Monitoring System",
+  description: "Misamis Oriental PhilSys packet monitoring and Matrix ticket automation"
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
