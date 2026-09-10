@@ -1,5 +1,4 @@
-import { Client } from "ssh2";
-import posixPath from "path/posix";
+﻿import { Client } from "ssh2";
 
 export interface NasHost {
   name: string;
@@ -14,17 +13,17 @@ export interface PacketSearchResult {
   remotePath: string;
 }
 
-function posixJoin(...parts: string[]) {
-  return parts.join("/").replace(/\/+/g, "/").replace(/\/$/, "") || "/";
-}
-
 function normalizePath(p: string): string {
   const value = (p || "/").trim().replace(/\\/g, "/");
   const parts = value.split("/").filter((x) => x && x !== ".");
   return "/" + parts.join("/");
 }
 
-async function createSftp(host: NasHost, username: string, password: string): Promise<{
+function posixJoin(a: string, b: string): string {
+  return normalizePath(a + "/" + b);
+}
+
+export async function createSftp(host: NasHost, username: string, password: string): Promise<{
   sftp: import("ssh2").SFTPWrapper;
   conn: Client;
 }> {
@@ -67,85 +66,110 @@ async function statRemote(sftp: import("ssh2").SFTPWrapper, remotePath: string):
 }
 
 async function mkdirRemote(sftp: import("ssh2").SFTPWrapper, remotePath: string): Promise<void> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
+    // Always resolve — if it already exists, that's fine
     sftp.mkdir(remotePath, (err) => {
-      // Ignore EEXIST
-      if (err && err.message !== "Failure") return reject(err);
       resolve();
     });
   });
 }
 
-async function mkdirP(sftp: import("ssh2").SFTPWrapper, remotePath: string): Promise<void> {
+export async function mkdirP(sftp: import("ssh2").SFTPWrapper, remotePath: string): Promise<void> {
   const normalized = normalizePath(remotePath);
   const parts = normalized.split("/").filter(Boolean);
   let current = "";
   for (const part of parts) {
     current = current + "/" + part;
-    const stat = await statRemote(sftp, current);
-    if (!stat) {
-      await mkdirRemote(sftp, current);
-    }
-  }
-}
-
-/** Recursively walk the NAS and find files matching the TRN substring. */
-async function walkSearch(
-  sftp: import("ssh2").SFTPWrapper,
-  dir: string,
-  trnLower: string,
-  results: PacketSearchResult[],
-  nasName: string,
-  host: string,
-  maxResults = 5,
-  onProgress?: (msg: string) => void
-): Promise<void> {
-  if (results.length >= maxResults) return;
-  if (onProgress) onProgress(`Scanning ${dir}...`);
-  const items = await listDir(sftp, dir);
-  for (const item of items) {
-    if (results.length >= maxResults) break;
-    const itemPath = posixJoin(dir, item.filename);
-    if (item.attrs.mode && (item.attrs.mode & 0o170000) === 0o040000) {
-      // Directory
-      const name = item.filename.toLowerCase();
-      if (name.startsWith("@") || name.startsWith("#") || name.startsWith(".")) continue;
-      await walkSearch(sftp, itemPath, trnLower, results, nasName, host, maxResults, onProgress);
-    } else {
-      // File
-      if (item.filename.toLowerCase().includes(trnLower)) {
-        results.push({ nasName, host, packetName: item.filename, remotePath: itemPath });
-      }
-    }
+    await mkdirRemote(sftp, current);
   }
 }
 
 /**
+ * Smart search: first try to find the packet in the PRO-LPT folder directly.
+ * Falls back to scanning the full root only if the PRO-LPT path is unknown.
+ */
+async function smartSearch(
+  sftp: import("ssh2").SFTPWrapper,
+  root: string,
+  trnDigits: string,
+  proLptFolder: string | undefined,
+  nasName: string,
+  host: string,
+): Promise<PacketSearchResult[]> {
+  const trnLower = trnDigits.toLowerCase();
+  const results: PacketSearchResult[] = [];
+
+  // Strategy 1: if we know the PRO-LPT folder, search it directly
+  if (proLptFolder) {
+    const targetDir = posixJoin(root, proLptFolder);
+    const items = await listDir(sftp, targetDir);
+    for (const item of items) {
+      if (item.filename.replace(/\D/g, "").includes(trnDigits) ||
+          item.filename.toLowerCase().includes(trnLower)) {
+        results.push({
+          nasName,
+          host,
+          packetName: item.filename,
+          remotePath: posixJoin(targetDir, item.filename),
+        });
+      }
+    }
+    if (results.length > 0) return results;
+  }
+
+  // Strategy 2: BFS walk from root (slower, fallback)
+  const queue: string[] = [root];
+  const visited = new Set<string>();
+  while (queue.length > 0 && results.length < 5) {
+    const dir = queue.shift()!;
+    if (visited.has(dir)) continue;
+    visited.add(dir);
+
+    const items = await listDir(sftp, dir);
+    for (const item of items) {
+      const itemPath = posixJoin(dir, item.filename);
+      const isDir = item.attrs.mode && (item.attrs.mode & 0o170000) === 0o040000;
+      if (isDir) {
+        const name = item.filename.toLowerCase();
+        // Skip system/hidden folders
+        if (name.startsWith("@") || name.startsWith("#") || name.startsWith(".") || name === "recycle") continue;
+        queue.push(itemPath);
+      } else {
+        if (item.filename.replace(/\D/g, "").includes(trnDigits) ||
+            item.filename.toLowerCase().includes(trnLower)) {
+          results.push({ nasName, host, packetName: item.filename, remotePath: itemPath });
+          if (results.length >= 5) break;
+        }
+      }
+    }
+  }
+  return results;
+}
+
+/**
  * Search for a TRN packet file on a single NAS host.
- * Returns an array of matching paths (usually just 1).
+ * proLptFolder: the PRO-LPT-XXXXX folder name for fast targeted search.
  */
 export async function searchPacketOnNas(
   host: NasHost,
   username: string,
   password: string,
   trn: string,
-  onProgress?: (msg: string) => void
+  proLptFolder?: string,
+  searchRoot?: string,
 ): Promise<PacketSearchResult[]> {
   const { sftp, conn } = await createSftp(host, username, password);
-  const results: PacketSearchResult[] = [];
+  const trnDigits = trn.replace(/\D/g, "");
+  const root = searchRoot || "/";
   try {
-    const trnLower = trn.toLowerCase();
-    await walkSearch(sftp, "/", trnLower, results, host.name, host.host, 5, onProgress);
+    return await smartSearch(sftp, root, trnDigits, proLptFolder, host.name, host.host);
   } finally {
     conn.end();
   }
-  return results;
 }
 
 /**
  * Copy a file from a source NAS to a destination folder on another NAS.
- * Creates the destination directory if it does not exist.
- * Returns the final remote path of the copied file.
  */
 export async function copyPacketToDestination(
   sourceHost: NasHost,
@@ -155,22 +179,15 @@ export async function copyPacketToDestination(
   sourceRemotePath: string,
   destFolder: string,
   fileName: string,
-  onProgress?: (msg: string) => void
 ): Promise<string> {
-  if (onProgress) onProgress(`Connecting to ${sourceHost.name}...`);
   const { sftp: srcSftp, conn: srcConn } = await createSftp(sourceHost, username, password);
-  if (onProgress) onProgress(`Connecting to destination ${destHost.name}...`);
   const { sftp: dstSftp, conn: dstConn } = await createSftp(destHost, username, password);
 
-  const destPath = normalizePath(posixJoin(destFolder, fileName));
+  const destPath = normalizePath(destFolder + "/" + fileName);
 
   try {
-    if (onProgress) onProgress(`Creating folder ${destFolder}...`);
     await mkdirP(dstSftp, destFolder);
 
-    if (onProgress) onProgress(`Copying ${fileName}...`);
-
-    // Stream: read from source, write to dest
     await new Promise<void>((resolve, reject) => {
       try {
         const readStream = srcSftp.createReadStream(sourceRemotePath);

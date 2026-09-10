@@ -46,12 +46,14 @@ export function extractLikelyPacketCodes(text: string): string[] {
 // PAMANA PRO-LPT Logic
 // ---------------------------------------------------------------------------
 
-let _machineCodeMap: Record<string, string> | null = null;
+type MachineInfo = { proLpt: string; province: string };
 
-function getMachineCodeMap(): Record<string, string> {
+let _machineCodeMap: Record<string, MachineInfo> | null = null;
+
+function getMachineCodeMap(): Record<string, MachineInfo> {
   if (_machineCodeMap) return _machineCodeMap;
 
-  const map: Record<string, string> = {};
+  const map: Record<string, MachineInfo> = {};
   try {
     const tsvPath = path.join(process.cwd(), "src/lib/data/machine_code_map.tsv");
     const lines = fs.readFileSync(tsvPath, "utf-8").split("\n");
@@ -60,8 +62,9 @@ function getMachineCodeMap(): Record<string, string> {
       if (parts.length >= 2) {
         const code = parts[0].trim();
         const proLpt = parts[1].trim();
+        const province = parts.length >= 5 ? parts[4].trim() : "";
         if (code && proLpt) {
-          map[code] = proLpt;
+          map[code] = { proLpt, province };
         }
       }
     }
@@ -89,5 +92,14 @@ export function packetMachineCode(packetId: string): string {
 export function machineFolderForPacket(packetId: string): string {
   const code = packetMachineCode(packetId);
   if (!code) return "";
-  return getMachineCodeMap()[code] || "";
+  return getMachineCodeMap()[code]?.proLpt || "";
+}
+
+/**
+ * Returns the province mapped for the given packet/TRN.
+ */
+export function machineProvinceForPacket(packetId: string): string {
+  const code = packetMachineCode(packetId);
+  if (!code) return "";
+  return getMachineCodeMap()[code]?.province || "";
 }

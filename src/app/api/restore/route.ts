@@ -1,9 +1,8 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest } from "next/server";
 import { handleApiError, ok, fail } from "@/lib/api";
 import { getStoredSettings } from "@/lib/settings";
 import { searchPacketOnNas, copyPacketToDestination } from "@/lib/nas-client";
 import { NAS_SEARCH_HOSTS, NAS_DESTINATION_HOST, NAS_DESTINATION_ROOT } from "@/lib/nas-config";
-import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 // Long-running — give it up to 5 minutes
@@ -33,7 +32,12 @@ async function postMatrixComment(baseUrl: string, apiKey: string, ticketId: stri
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { trn, ticketId, ticketNumber } = body as { trn: string; ticketId: string; ticketNumber: string };
+    const { trn, ticketId, ticketNumber, proLptFolder } = body as {
+      trn: string;
+      ticketId: string;
+      ticketNumber: string;
+      proLptFolder?: string;
+    };
 
     if (!trn || !ticketId || !ticketNumber) {
       return fail("trn, ticketId, and ticketNumber are required", 400);
@@ -54,15 +58,15 @@ export async function POST(req: NextRequest) {
 
     const steps: string[] = [];
 
-    // Step 1: Search NASes
-    steps.push(`Searching for packet: ${trn}`);
+    // Step 1: Search NASes (NAS2 first, then NAS1)
+    steps.push(`Searching for packet: ${trn}${proLptFolder ? ` (PRO-LPT: ${proLptFolder})` : ""}`);
     let foundResult = null;
     let foundOnHost = null;
 
     for (const host of NAS_SEARCH_HOSTS) {
       steps.push(`Trying ${host.name} (${host.host})...`);
       try {
-        const results = await searchPacketOnNas(host, nasUsername, nasPassword, trn);
+        const results = await searchPacketOnNas(host, nasUsername, nasPassword, trn, proLptFolder);
         if (results.length > 0) {
           foundResult = results[0];
           foundOnHost = host;
@@ -80,7 +84,7 @@ export async function POST(req: NextRequest) {
       return ok({ success: false, steps, error: "Packet not found on any NAS." });
     }
 
-    // Step 2: Copy to destination
+    // Step 2: Copy to destination NAS1
     const destFolder = buildTicketFolder(ticketNumber);
     steps.push(`Copying to ${destFolder} on ${NAS_DESTINATION_HOST.name}...`);
 

@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { fail, handleApiError, ok } from "@/lib/api";
 import { STATUS_LABELS } from "@/lib/constants";
-import { normalizePacketCode, machineFolderForPacket } from "@/lib/packet-normalizer";
+import { normalizePacketCode, machineFolderForPacket, machineProvinceForPacket } from "@/lib/packet-normalizer";
 import { prisma } from "@/lib/prisma";
 import { assertRateLimit } from "@/lib/rate-limit";
 
@@ -93,11 +93,12 @@ export async function GET(request: NextRequest) {
     const totalPages = Math.max(1, Math.ceil(filteredTotal / query.pageSize));
 
     return ok({
-      packets: packets.map((packet) => ({
-        ...packet,
-        statusLabel: STATUS_LABELS[packet.syncStatus],
-        proLptFolder: machineFolderForPacket(packet.normalizedPacketCode)
-      })),
+        packets: packets.map((packet) => ({
+          ...packet,
+          statusLabel: STATUS_LABELS[packet.syncStatus],
+          proLptFolder: machineFolderForPacket(packet.normalizedPacketCode),
+          province: machineProvinceForPacket(packet.normalizedPacketCode),
+        })),
       pagination: {
         page: query.page,
         pageSize: query.pageSize,

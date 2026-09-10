@@ -9,6 +9,8 @@ type RestorePacket = {
   ticketId: string | null;
   ticketNumber: string | null;
   latestMatrixReply: string | null;
+  proLptFolder: string;
+  province: string;
 };
 
 type RestoreStep = { text: string; type: "info" | "ok" | "error" | "warn" };
@@ -40,6 +42,8 @@ export function AutomationClient() {
         ticketId: p.ticketId ?? null,
         ticketNumber: p.ticketNumber ?? null,
         latestMatrixReply: p.latestMatrixReply ?? null,
+        proLptFolder: p.proLptFolder ?? "",
+        province: p.province ?? "",
       }));
       setRestorePackets(packets.filter(p => p.ticketId && p.ticketNumber));
     } catch {
@@ -77,6 +81,7 @@ export function AutomationClient() {
           trn: packet.packetCode,
           ticketId: packet.ticketId,
           ticketNumber: packet.ticketNumber,
+          proLptFolder: packet.proLptFolder || undefined,
         }),
       });
       const payload = await res.json();
@@ -163,7 +168,21 @@ export function AutomationClient() {
                   return (
                     <Fragment key={packet.id}>
                       <tr>
-                        <td className="mono" style={{ fontSize: "0.8rem" }}>{packet.packetCode}</td>
+                        <td>
+                          <div className="mono" style={{ fontSize: "0.78rem" }}>{packet.packetCode}</div>
+                          {(packet.proLptFolder || packet.province) && (
+                            <div style={{ fontSize: "0.73rem", color: "var(--muted)", marginTop: 2, display: "flex", gap: 6 }}>
+                              {packet.proLptFolder && (
+                                <span style={{ background: "#e0f2fe", color: "#0369a1", padding: "1px 6px", borderRadius: 4, fontWeight: 600 }}>
+                                  {packet.proLptFolder}
+                                </span>
+                              )}
+                              {packet.province && (
+                                <span style={{ color: "#64748b" }}>{packet.province}</span>
+                              )}
+                            </div>
+                          )}
+                        </td>
                         <td>#{packet.ticketNumber}</td>
                         <td style={{ maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "0.85rem", color: "var(--muted)" }}>
                           {packet.latestMatrixReply?.slice(0, 80) ?? "—"}
