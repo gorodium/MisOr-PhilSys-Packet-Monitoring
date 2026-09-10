@@ -142,7 +142,7 @@ export function FilingClient() {
                 </div>
               </div>
 
-              <div className="action-remarks-grid">
+              <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
                 
                 <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                   <label className="field-label" htmlFor="actionType">
