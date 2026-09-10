@@ -7,7 +7,8 @@ import Link from "next/link";
 export function FilingClient() {
   const [trn, setTrn] = useState("");
   const [actionType, setActionType] = useState("Updating");
-  const [remarks, setRemarks] = useState("");
+  const [issueType, setIssueType] = useState("");
+  const [customIssue, setCustomIssue] = useState("");
   
   // Optional fields
   const [firstName, setFirstName] = useState("");
@@ -42,7 +43,7 @@ export function FilingClient() {
         body: JSON.stringify({
           trn: trn.replace(/\D/g, ""),
           actionType,
-          remarks,
+          remarks: issueType === "Others" ? customIssue : issueType,
           firstName: firstName || null,
           middleName: middleName || null,
           lastName: lastName || null,
@@ -70,7 +71,8 @@ export function FilingClient() {
 
   function clearForm() {
     setTrn("");
-    setRemarks("");
+    setIssueType("");
+    setCustomIssue("");
     setFirstName("");
     setMiddleName("");
     setLastName("");
@@ -160,20 +162,42 @@ export function FilingClient() {
                 </div>
                 
                 <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                  <label className="field-label" htmlFor="remarks">
-                    Remarks <span style={{ color: "var(--danger)", marginLeft: "2px" }} aria-label="required">*</span>
+                  <label className="field-label" htmlFor="issueType">
+                    TRN issue/s <span style={{ color: "var(--danger)", marginLeft: "2px" }} aria-label="required">*</span>
                   </label>
-                  <textarea
-                    id="remarks"
-                    className="input"
-                    style={{ minHeight: "44px", fontSize: "15px", resize: "vertical" }}
-                    placeholder="Describe the reason for this filing request."
-                    value={remarks}
-                    onChange={(e) => setRemarks(e.target.value)}
+                  <select
+                    id="issueType"
+                    className="select"
+                    style={{ minHeight: "44px", fontSize: "15px" }}
+                    value={issueType}
+                    onChange={(e) => setIssueType(e.target.value)}
                     required
-                    rows={4}
-                  />
+                  >
+                    <option value="" disabled>Select issue type</option>
+                    <option value="Unclickable">Unclickable</option>
+                    <option value="Still in progress">Still in progress</option>
+                    <option value="Failed Registration">Failed Registration</option>
+                    <option value="Others">Others</option>
+                  </select>
                 </div>
+
+                {issueType === "Others" && (
+                  <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                    <label className="field-label" htmlFor="customIssue">
+                      Specify Issue <span style={{ color: "var(--danger)", marginLeft: "2px" }} aria-label="required">*</span>
+                    </label>
+                    <textarea
+                      id="customIssue"
+                      className="input"
+                      style={{ minHeight: "44px", fontSize: "15px", resize: "vertical" }}
+                      placeholder="Describe the technical problem"
+                      value={customIssue}
+                      onChange={(e) => setCustomIssue(e.target.value)}
+                      required
+                      rows={3}
+                    />
+                  </div>
+                )}
 
               </div>
             </div>
