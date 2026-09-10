@@ -112,7 +112,7 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
         // We will use the hardcoded CATEGORIES array instead.
         if (data.trackers) {
           const allowedTrackers = data.trackers.filter((t: any) => 
-            t.name === "ePhilID TRN Concerns" || t.name === "Updating Concerns"
+            t.name === "ePhilID TRN Concerns" || t.name === "Updating Concerns" || t.name === "ePhilID QR Concerns"
           );
           setTrackersList(allowedTrackers);
         }
