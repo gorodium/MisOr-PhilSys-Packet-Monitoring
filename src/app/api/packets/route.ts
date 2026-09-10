@@ -44,6 +44,9 @@ export async function GET(request: NextRequest) {
 
     const where = {
       ...(status ? { syncStatus: status } : {}),
+      ...(query.status === "for_backend_restoration"
+        ? { latestMatrixReply: { contains: "backend restoration", mode: "insensitive" as const } }
+        : {}),
       ...(category ? { issueCategory: category } : {}),
       ...(normalizedSearch
         ? {

@@ -105,6 +105,21 @@ export const settingDefinitions: SettingDefinition[] = [
     required: true
   },
   {
+    key: "nasUsername",
+    label: "NAS Username (SFTP)",
+    envName: "NAS_USERNAME",
+    fallback: "",
+    type: "text"
+  },
+  {
+    key: "nasPassword",
+    label: "NAS Password (SFTP)",
+    envName: "NAS_PASSWORD",
+    fallback: "",
+    type: "text",
+    isSecret: true
+  },
+  {
     key: "syncIntervalSeconds",
     label: "Sync interval",
     envName: "SYNC_INTERVAL_SECONDS",

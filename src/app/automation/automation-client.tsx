@@ -1,7 +1,27 @@
 "use client";
 
-import { Bot, CheckSquare, Play, RefreshCw, Square } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Bot, CheckSquare, HardDriveDownload, Play, RefreshCw, Square, Loader2 } from "lucide-react";
+import { useEffect, useMemo, useState, useCallback } from "react";
+
+type RestorePacket = {
+  id: string;
+  packetCode: string;
+  ticketId: string | null;
+  ticketNumber: string | null;
+  latestMatrixReply: string | null;
+};
+
+type RestoreJob = {
+  packetId: string;
+  trn: string;
+  ticketId: string;
+  ticketNumber: string;
+  steps: { text: string; type: "info" | "ok" | "error" | "warn" }[];
+  running: boolean;
+  done: boolean;
+  error: string;
+  uploadedTo: string;
+};
 
 type Candidate = {
   packetId: string;
@@ -13,12 +33,96 @@ type Candidate = {
 };
 
 export function AutomationClient() {
-  const [mode, setMode] = useState<"review" | "auto">("review");
+  const [mode, setMode] = useState<"review" | "auto" | "restore">("review");
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+
+  // Backend Restoration state
+  const [restorePackets, setRestorePackets] = useState<RestorePacket[]>([]);
+  const [restoreLoading, setRestoreLoading] = useState(false);
+  const [restoreJobs, setRestoreJobs] = useState<Map<string, RestoreJob>>(new Map());
+
+  const loadRestorePackets = useCallback(async () => {
+    setRestoreLoading(true);
+    try {
+      const res = await fetch("/api/packets?status=for_backend_restoration&pageSize=200");
+      const data = await res.json();
+      const packets: RestorePacket[] = (data.packets || []).map((p: any) => ({
+        id: p.id,
+        packetCode: p.packetCode,
+        ticketId: p.ticketId ?? null,
+        ticketNumber: p.ticketNumber ?? null,
+        latestMatrixReply: p.latestMatrixReply ?? null,
+      }));
+      setRestorePackets(packets.filter(p => p.ticketId && p.ticketNumber));
+    } catch {
+      // ignore
+    } finally {
+      setRestoreLoading(false);
+    }
+  }, []);
+
+  async function runRestore(packet: RestorePacket) {
+    if (!packet.ticketId || !packet.ticketNumber) return;
+    const jobKey = packet.id;
+
+    setRestoreJobs(prev => new Map(prev).set(jobKey, {
+      packetId: packet.id,
+      trn: packet.packetCode,
+      ticketId: packet.ticketId!,
+      ticketNumber: packet.ticketNumber!,
+      steps: [{ text: "Starting recovery...", type: "info" }],
+      running: true,
+      done: false,
+      error: "",
+      uploadedTo: "",
+    }));
+
+    try {
+      const res = await fetch("/api/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          trn: packet.packetCode,
+          ticketId: packet.ticketId,
+          ticketNumber: packet.ticketNumber,
+        }),
+      });
+      const payload = await res.json();
+
+      const steps = (payload.steps || []).map((s: string) => ({
+        text: s,
+        type: s.startsWith("✅") ? "ok" : s.startsWith("❌") ? "error" : s.startsWith("⚠️") ? "warn" : "info",
+      }));
+
+      setRestoreJobs(prev => new Map(prev).set(jobKey, {
+        packetId: packet.id,
+        trn: packet.packetCode,
+        ticketId: packet.matchedTicketId!,
+        ticketNumber: packet.matchedTicketNumber!,
+        steps,
+        running: false,
+        done: true,
+        error: payload.error || "",
+        uploadedTo: payload.uploadedTo || "",
+      }));
+    } catch (err: any) {
+      setRestoreJobs(prev => new Map(prev).set(jobKey, {
+        packetId: packet.id,
+        trn: packet.packetCode,
+        ticketId: packet.matchedTicketId!,
+        ticketNumber: packet.matchedTicketNumber!,
+        steps: [{ text: `Failed: ${err?.message}`, type: "error" }],
+        running: false,
+        done: true,
+        error: err?.message || "Unknown error",
+        uploadedTo: "",
+      }));
+    }
+  }
 
   const selectedCandidates = useMemo(
     () => candidates.filter((candidate) => selected.has(candidate.packetId)),
@@ -51,7 +155,8 @@ export function AutomationClient() {
 
   useEffect(() => {
     void dryRun(false);
-  }, []);
+    void loadRestorePackets();
+  }, [loadRestorePackets]);
 
   function togglePacket(packetId: string) {
     setSelected((current) => {
@@ -136,6 +241,10 @@ export function AutomationClient() {
           </button>
           <button className={`segment ${mode === "auto" ? "segment-active" : ""}`} onClick={() => setMode("auto")}>
             Auto Mode
+          </button>
+          <button className={`segment ${mode === "restore" ? "segment-active" : ""}`} onClick={() => { setMode("restore"); void loadRestorePackets(); }}>
+            <HardDriveDownload size={14} style={{ marginRight: 4 }} />
+            Backend Restoration
           </button>
         </div>
       </header>
@@ -247,8 +356,104 @@ export function AutomationClient() {
             </div>
           </div>
         </section>
-      )}
+      ) : mode === "restore" ? (
+        <section className="panel">
+          <div className="panel-header">
+            <h2 className="panel-title">
+              <HardDriveDownload size={18} style={{ marginRight: 8 }} />
+              Backend Restoration Packets
+            </h2>
+            <button className="btn" onClick={loadRestorePackets} disabled={restoreLoading}>
+              <RefreshCw size={16} />
+              Refresh
+            </button>
+          </div>
+
+          {restoreLoading && (
+            <div style={{ padding: "20px 16px", display: "flex", alignItems: "center", gap: 8, color: "var(--muted)" }}>
+              <Loader2 size={16} className="spin" style={{ animation: "spin 1s linear infinite" }} />
+              Loading backend restoration packets...
+            </div>
+          )}
+
+          {!restoreLoading && restorePackets.length === 0 && (
+            <div style={{ padding: "20px 16px", color: "var(--muted)" }}>
+              No backend restoration packets with matched tickets found.
+            </div>
+          )}
+
+          {restorePackets.length > 0 && (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>TRN</th>
+                    <th>Matched Ticket</th>
+                    <th>Latest Reply</th>
+                    <th style={{ textAlign: "right" }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {restorePackets.map(packet => {
+                    const job = restoreJobs.get(packet.id);
+                    return (
+                      <>
+                        <tr key={packet.id}>
+                          <td className="mono" style={{ fontSize: "0.8rem" }}>{packet.packetCode}</td>
+                          <td>#{packet.ticketNumber}</td>
+                          <td style={{ maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "0.85rem", color: "var(--muted)" }}>
+                            {packet.latestMatrixReply?.slice(0, 80) ?? "—"}
+                          </td>
+                          <td style={{ textAlign: "right" }}>
+                            {!job || (!job.running && !job.done) ? (
+                              <button
+                                className="btn btn-primary"
+                                style={{ fontSize: "0.8rem", padding: "4px 12px" }}
+                                onClick={() => runRestore(packet)}
+                              >
+                                <HardDriveDownload size={14} />
+                                Recover
+                              </button>
+                            ) : job.running ? (
+                              <span style={{ color: "var(--muted)", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: 4 }}>
+                                <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Running...
+                              </span>
+                            ) : job.done && !job.error ? (
+                              <span style={{ color: "#16a34a", fontWeight: 600, fontSize: "0.85rem" }}>✅ Done</span>
+                            ) : (
+                              <span style={{ color: "var(--danger)", fontSize: "0.85rem" }}>❌ Failed</span>
+                            )}
+                          </td>
+                        </tr>
+                        {job && (job.running || job.done) && (
+                          <tr key={`${packet.id}-steps`}>
+                            <td colSpan={4} style={{ background: "var(--bg)", padding: "8px 16px 12px" }}>
+                              <div style={{ fontFamily: "monospace", fontSize: "0.78rem", display: "flex", flexDirection: "column", gap: 2 }}>
+                                {job.steps.map((step, i) => (
+                                  <div key={i} style={{ color: step.type === "ok" ? "#16a34a" : step.type === "error" ? "var(--danger)" : step.type === "warn" ? "#b45309" : "var(--muted)" }}>
+                                    {step.text}
+                                  </div>
+                                ))}
+                                {job.done && job.uploadedTo && (
+                                  <div style={{ marginTop: 4, color: "#1e40af" }}>
+                                    📁 Uploaded to: {job.uploadedTo}
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <style dangerouslySetInnerHTML={{__html: `@keyframes spin { 100% { transform: rotate(360deg); } }`}} />
+        </section>
+      ) : null}
     </>
   );
 }
-
