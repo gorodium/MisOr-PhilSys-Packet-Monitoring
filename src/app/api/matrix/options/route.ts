@@ -1,10 +1,31 @@
 import { NextResponse } from "next/server";
 import { handleApiError, ok, fail } from "@/lib/api";
+import { getResolvedSettings, getStoredSettings } from "@/lib/settings";
+
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 export async function GET() {
   try {
-    const baseUrl = process.env.MATRIX_BASE_URL?.replace(/\/$/, "");
-    const apiKey = process.env.MATRIX_API_KEY;
+    const settings = await getResolvedSettings();
+
+    if (settings.matrixMode === "demo") {
+      return ok({
+        assignees: [
+          { id: 1, name: "Aaron Demo" },
+          { id: 2, name: "Joshua Demo" },
+          { id: 3, name: "Other User" }
+        ],
+        categories: [],
+        trackers: [
+          { id: 42, name: "ePhilID TRN Concerns" },
+          { id: 221, name: "Updating Concerns" }
+        ]
+      });
+    }
+
+    const stored = await getStoredSettings();
+    const baseUrl = settings.matrixBaseUrl?.replace(/\/$/, "");
+    const apiKey = stored.get("matrixApiKey")?.value || process.env.MATRIX_API_KEY || "";
     const projectId = "philsys-it-support-ticketing-2026";
 
     if (!baseUrl || !apiKey) {
