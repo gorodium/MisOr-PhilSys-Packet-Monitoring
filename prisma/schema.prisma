@@ -49,6 +49,11 @@ model Packet {
   matrixTicketDbId        String?
   matrixTicket            MatrixTicket?     @relation(fields: [matrixTicketDbId], references: [id], onDelete: SetNull)
   matches                 TicketPacketMatch[]
+  
+  // Backend Restoration state flags
+  restorationUploaded     Boolean           @default(false)
+  restorationCommented    Boolean           @default(false)
+
   createdAt               DateTime          @default(now())
   updatedAt               DateTime          @updatedAt
 

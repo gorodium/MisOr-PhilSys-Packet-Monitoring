@@ -1,23 +1,26 @@
-﻿import { NextRequest } from "next/server";
+import { NextRequest } from "next/server";
 import { handleApiError, ok, fail } from "@/lib/api";
 import { getStoredSettings } from "@/lib/settings";
-import { searchPacketOnNas, copyPacketToDestination } from "@/lib/nas-client";
+import { searchPacketOnNas, copyPacketToDestination, PacketSearchResult } from "@/lib/nas-client";
 import { NAS_SEARCH_HOSTS, NAS_DESTINATION_HOST, NAS_DESTINATION_ROOT } from "@/lib/nas-config";
+import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
-// Long-running — give it up to 5 minutes
+// Give up to 5 minutes — NAS searches can be slow
 export const maxDuration = 300;
 
-function buildTicketFolder(ticketNumber: string) {
-  return `${NAS_DESTINATION_ROOT}/${ticketNumber}`;
-}
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+
+// ──────────────────────────────────────────────────────────────────────
+// Matrix comment helper
+// ──────────────────────────────────────────────────────────────────────
 
 async function postMatrixComment(baseUrl: string, apiKey: string, ticketId: string, message: string) {
   const url = `${baseUrl.replace(/\/$/, "")}/issues/${ticketId}.json`;
   const res = await fetch(url, {
     method: "PUT",
     headers: {
-      "Accept": "application/json",
+      Accept: "application/json",
       "Content-Type": "application/json",
       "X-Redmine-API-Key": apiKey,
     },
@@ -29,10 +32,16 @@ async function postMatrixComment(baseUrl: string, apiKey: string, ticketId: stri
   }
 }
 
+// ──────────────────────────────────────────────────────────────────────
+// POST /api/restore
+// Body: { trn, ticketId, ticketNumber, proLptFolder? }
+// ──────────────────────────────────────────────────────────────────────
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { trn, ticketId, ticketNumber, proLptFolder } = body as {
+    const { packetId, trn, ticketId, ticketNumber, proLptFolder } = body as {
+      packetId?: string;
       trn: string;
       ticketId: string;
       ticketNumber: string;
@@ -43,40 +52,60 @@ export async function POST(req: NextRequest) {
       return fail("trn, ticketId, and ticketNumber are required", 400);
     }
 
+    // ── Load settings ──
     const stored = await getStoredSettings();
     const nasUsername = stored.get("nasUsername")?.value || process.env.NAS_USERNAME || "";
-    const nasPassword = stored.get("nasPassword")?.value || process.env.NAS_PASSWORD || "";
+    const nas1Password = stored.get("nas1Password")?.value || process.env.NAS1_PASSWORD || "";
+    const nas2Password = stored.get("nas2Password")?.value || process.env.NAS2_PASSWORD || "";
     const matrixBaseUrl = stored.get("matrixBaseUrl")?.value || process.env.MATRIX_BASE_URL || "";
     const matrixApiKey = stored.get("matrixApiKey")?.value || process.env.MATRIX_API_KEY || "";
 
-    if (!nasUsername || !nasPassword) {
-      return fail("NAS credentials not configured. Please set NAS Username and NAS Password in Settings.", 500);
-    }
-    if (!matrixBaseUrl || !matrixApiKey) {
-      return fail("Matrix API not configured.", 500);
+    if (!nasUsername || !nas1Password || !nas2Password) {
+      return fail(
+        "NAS credentials not configured. Please set NAS Username, NAS 1 Password, and NAS 2 Password in Settings.",
+        500
+      );
     }
 
     const steps: string[] = [];
 
-    // Step 1: Search NASes (NAS2 first, then NAS1)
-    steps.push(`Searching for packet: ${trn}${proLptFolder ? ` (PRO-LPT: ${proLptFolder})` : ""}`);
-    let foundResult = null;
+    const log = (msg: string) => steps.push(msg);
+
+    // ── Phase 1: Search ──
+    log(`🔍 Searching for packet: ${trn}`);
+    if (proLptFolder) log(`   PRO-LPT folder: ${proLptFolder}`);
+
+    let foundResult: PacketSearchResult | null = null;
     let foundOnHost = null;
 
     for (const host of NAS_SEARCH_HOSTS) {
-      steps.push(`Trying ${host.name} (${host.host})...`);
+      log(`\nTrying ${host.name} (${host.host})...`);
+
       try {
-        const results = await searchPacketOnNas(host, nasUsername, nasPassword, trn, proLptFolder);
+        // Use "/Misamis Oriental" as search root — NAS folder structure starts there
+        const searchRoot = "/Misamis Oriental";
+        const passwordToUse = host.name.includes("NAS2") ? nas2Password : nas1Password;
+
+        const results = await searchPacketOnNas(
+          host,
+          nasUsername,
+          passwordToUse,
+          trn,
+          proLptFolder,
+          searchRoot,
+          (msg) => log(`   ${msg}`)
+        );
+
         if (results.length > 0) {
           foundResult = results[0];
           foundOnHost = host;
-          steps.push(`✅ Found on ${host.name}: ${foundResult.remotePath}`);
+          log(`✅ Found: ${foundResult.remotePath} (${(foundResult.size / 1024).toFixed(1)} KB)`);
           break;
         } else {
-          steps.push(`❌ Not found on ${host.name}`);
+          log(`❌ Not found on ${host.name}`);
         }
       } catch (err: any) {
-        steps.push(`⚠️ Error connecting to ${host.name}: ${err?.message ?? String(err)}`);
+        log(`⚠️ Error on ${host.name}: ${err?.message ?? String(err)}`);
       }
     }
 
@@ -84,44 +113,50 @@ export async function POST(req: NextRequest) {
       return ok({ success: false, steps, error: "Packet not found on any NAS." });
     }
 
-    // Step 2: Copy to destination NAS1
-    const destFolder = buildTicketFolder(ticketNumber);
-    steps.push(`Copying to ${destFolder} on ${NAS_DESTINATION_HOST.name}...`);
+    // ── Phase 2: Copy to destination ──
+    const destFolder = `${NAS_DESTINATION_ROOT}/${ticketNumber}`;
+    log(`\n📤 Uploading to ${NAS_DESTINATION_HOST.name}...`);
+    log(`   Destination folder: ${destFolder}`);
 
-    let copiedPath = "";
+    let uploadedPath = "";
+    let alreadyUploaded = false;
     try {
-      copiedPath = await copyPacketToDestination(
+      const result = await copyPacketToDestination(
         foundOnHost,
         NAS_DESTINATION_HOST,
         nasUsername,
-        nasPassword,
+        foundOnHost.name.includes("NAS2") ? nas2Password : nas1Password,
+        nas1Password,
         foundResult.remotePath,
         destFolder,
-        foundResult.packetName
+        foundResult.packetName,
+        (msg) => log(`   ${msg}`)
       );
-      steps.push(`✅ Uploaded: ${copiedPath}`);
+      uploadedPath = result.path;
+      alreadyUploaded = result.alreadyUploaded;
     } catch (err: any) {
-      steps.push(`❌ Upload failed: ${err?.message ?? String(err)}`);
+      log(`❌ Upload failed: ${err?.message ?? String(err)}`);
       return ok({ success: false, steps, error: `Upload failed: ${err?.message}` });
     }
 
-    // Step 3: Post Matrix comment
-    steps.push(`Posting comment to Matrix ticket #${ticketNumber}...`);
-    const commentBody = `Packet has been uploaded to\n\n${destFolder}/${foundResult.packetName}\n\n${trn}\n\nPlease proceed.`;
-    try {
-      await postMatrixComment(matrixBaseUrl, matrixApiKey, ticketId, commentBody);
-      steps.push(`✅ Comment posted to ticket #${ticketNumber}`);
-    } catch (err: any) {
-      steps.push(`⚠️ Comment failed: ${err?.message ?? String(err)}`);
+    // ── Phase 3: Update local DB (we shouldn't post Matrix comment automatically, user clicks Post Comment) ──
+    // The user explicitly clicks the "Post Comment" button from the UI.
+    
+    if (packetId) {
+      await prisma.packet.update({
+        where: { id: packetId },
+        data: { restorationUploaded: true },
+      });
     }
 
     return ok({
       success: true,
       steps,
       foundPath: foundResult.remotePath,
-      uploadedTo: copiedPath,
+      uploadedTo: uploadedPath,
       destFolder,
       packetName: foundResult.packetName,
+      alreadyUploaded,
     });
   } catch (error) {
     return handleApiError(error);

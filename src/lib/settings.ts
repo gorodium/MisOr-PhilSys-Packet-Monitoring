@@ -106,15 +106,23 @@ export const settingDefinitions: SettingDefinition[] = [
   },
   {
     key: "nasUsername",
-    label: "NAS Username (SFTP)",
+    label: "NAS Username (for both NAS)",
     envName: "NAS_USERNAME",
     fallback: "",
     type: "text"
   },
   {
-    key: "nasPassword",
-    label: "NAS Password (SFTP)",
-    envName: "NAS_PASSWORD",
+    key: "nas1Password",
+    label: "NAS 1 Password (upload.philsys.gov.ph)",
+    envName: "NAS1_PASSWORD",
+    fallback: "",
+    type: "text",
+    isSecret: true
+  },
+  {
+    key: "nas2Password",
+    label: "NAS 2 Password (upload2.philsys.gov.ph)",
+    envName: "NAS2_PASSWORD",
     fallback: "",
     type: "text",
     isSecret: true
@@ -140,6 +148,13 @@ export const settingDefinitions: SettingDefinition[] = [
     fallback: DEFAULT_TICKET_TEMPLATE,
     type: "textarea",
     required: true
+  },
+  {
+    key: "backendRestorationCommentTemplate",
+    label: "Backend Restoration Comment Template",
+    envName: "BACKEND_RESTORATION_COMMENT_TEMPLATE",
+    fallback: "{{packetCode}}\n\nPacket has been uploaded to\n\n{{destFolder}}/",
+    type: "textarea"
   }
 ];
 
@@ -157,6 +172,7 @@ export type ResolvedSettings = {
   syncIntervalSeconds: number;
   autoTicketCreationEnabled: boolean;
   ticketBodyTemplate: string;
+  backendRestorationCommentTemplate: string;
 };
 
 function settingValueFromEnv(definition: SettingDefinition) {
@@ -188,7 +204,8 @@ export function sanitizeSettingInput(input: Record<string, unknown>) {
   const sanitized: Array<{ key: string; value: string; isSecret: boolean }> = [];
 
   for (const definition of settingDefinitions) {
-    if (!(definition.key in input) || definition.isSecret) {
+    // If it's a secret and the user didn't provide a new value (it's empty), skip updating it.
+    if (!(definition.key in input) || (definition.isSecret && !input[definition.key])) {
       continue;
     }
 
@@ -272,7 +289,8 @@ export async function getResolvedSettings(): Promise<ResolvedSettings> {
     syncIntervalSeconds:
       Number.isFinite(syncIntervalSeconds) && syncIntervalSeconds > 0 ? Math.floor(syncIntervalSeconds) : 300,
     autoTicketCreationEnabled: readBooleanLike(value("autoTicketCreationEnabled")),
-    ticketBodyTemplate: value("ticketBodyTemplate") || DEFAULT_TICKET_TEMPLATE
+    ticketBodyTemplate: value("ticketBodyTemplate") || DEFAULT_TICKET_TEMPLATE,
+    backendRestorationCommentTemplate: value("backendRestorationCommentTemplate") || "{{packetCode}}\n\nPacket has been uploaded to\n\n{{destFolder}}/"
   };
 }
 
