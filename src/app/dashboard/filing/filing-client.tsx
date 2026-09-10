@@ -158,6 +158,7 @@ export function FilingClient() {
                   >
                     <option value="Updating">Updating</option>
                     <option value="Not Updating">Not Updating</option>
+                    <option value="ePhilID QR Concerns">ePhilID QR Concerns</option>
                   </select>
                 </div>
                 
@@ -177,6 +178,7 @@ export function FilingClient() {
                     <option value="Unclickable">Unclickable</option>
                     <option value="Still in progress">Still in progress</option>
                     <option value="Failed Registration">Failed Registration</option>
+                    <option value="No Photo/QR">No Photo/QR</option>
                     <option value="Others">Others</option>
                   </select>
                 </div>
