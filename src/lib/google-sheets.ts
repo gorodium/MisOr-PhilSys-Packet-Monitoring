@@ -3,7 +3,7 @@ import { PacketSyncStatus, RunStatus } from "@prisma/client";
 import { demoSheetRows } from "@/lib/demo-data";
 import { getRuntimeConfig, readEnv } from "@/lib/env";
 import { getResolvedSettings, ResolvedSettings } from "@/lib/settings";
-import { normalizePacketCode } from "@/lib/packet-normalizer";
+import { normalizePacketCode, extractLikelyPacketCodes } from "@/lib/packet-normalizer";
 import { prisma } from "@/lib/prisma";
 import { withRetry } from "@/lib/retry";
 
@@ -54,26 +54,31 @@ function valuesToRows(values: string[][], settings: ResolvedSettings): SheetRead
   for (let index = 1; index < values.length; index += 1) {
     const row = values[index] ?? [];
     const packetCode = String(row[packetColumnIndex] ?? "").trim();
-    const normalizedPacketCode = normalizePacketCode(packetCode);
+    
+    const extractedCodes = extractLikelyPacketCodes(packetCode);
+    
+    // Fallback: if we couldn't extract 29-digit codes, just normalize whatever is there.
+    // This ensures we still capture invalid TRNs so they can be flagged.
+    const codesToProcess = extractedCodes.length > 0 ? extractedCodes : [normalizePacketCode(packetCode)];
 
-    if (!normalizedPacketCode) {
-      continue;
+    for (const normalizedPacketCode of codesToProcess) {
+      if (!normalizedPacketCode) continue;
+
+      const rawData = headers.reduce<SheetRawRow>((accumulator, header, cellIndex) => {
+        if (header) {
+          accumulator[header] = String(row[cellIndex] ?? "");
+        }
+        return accumulator;
+      }, {});
+
+      rows.push({
+        rowNumber: index + 1,
+        packetCode: extractedCodes.length > 0 ? normalizedPacketCode : packetCode, // if multiple, store the exact TRN as the packetCode
+        normalizedPacketCode,
+        issueCategory: categoryColumnIndex >= 0 ? String(row[categoryColumnIndex] ?? "").trim() || null : null,
+        rawData
+      });
     }
-
-    const rawData = headers.reduce<SheetRawRow>((accumulator, header, cellIndex) => {
-      if (header) {
-        accumulator[header] = String(row[cellIndex] ?? "");
-      }
-      return accumulator;
-    }, {});
-
-    rows.push({
-      rowNumber: index + 1,
-      packetCode,
-      normalizedPacketCode,
-      issueCategory: categoryColumnIndex >= 0 ? String(row[categoryColumnIndex] ?? "").trim() || null : null,
-      rawData
-    });
   }
 
   return { rows, headers };

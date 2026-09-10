@@ -31,9 +31,8 @@ export function isTrnLike(value: string): boolean {
  * Extract 29-digit TRN packet codes from free text.
  */
 export function extractLikelyPacketCodes(text: string): string[] {
-  // Match 29-digit sequence, optionally separated by spaces or dashes
-  const pattern = /(?:\d[\s-]*){29}/g;
-  const candidates = text.match(pattern) ?? [];
+  // Find sequences of digits, spaces, and dashes (excludes newlines, letters, etc.)
+  const candidates = text.match(/[\d -]+/g) ?? [];
 
   const normalized = candidates
     .map(c => c.replace(/\D/g, ""))

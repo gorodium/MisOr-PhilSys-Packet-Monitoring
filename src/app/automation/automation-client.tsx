@@ -169,9 +169,11 @@ export function AutomationClient() {
                     <Fragment key={packet.id}>
                       <tr>
                         <td>
-                          <div className="mono" style={{ fontSize: "0.78rem" }}>{packet.packetCode}</div>
+                          <div className="mono" style={{ fontSize: "1rem", fontWeight: 700, letterSpacing: "1px", color: "var(--foreground)" }}>
+                            {packet.packetCode}
+                          </div>
                           {(packet.proLptFolder || packet.province) && (
-                            <div style={{ fontSize: "0.73rem", color: "var(--muted)", marginTop: 2, display: "flex", gap: 6 }}>
+                            <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: 4, display: "flex", gap: 6 }}>
                               {packet.proLptFolder && (
                                 <span style={{ background: "#e0f2fe", color: "#0369a1", padding: "1px 6px", borderRadius: 4, fontWeight: 600 }}>
                                   {packet.proLptFolder}
