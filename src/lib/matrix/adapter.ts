@@ -227,7 +227,7 @@ class HttpMatrixAdapter implements MatrixAdapter {
     };
 
     const response = await withRetry(() =>
-      fetch(url, { ...init, headers: { ...headers, ...init?.headers } })
+      fetch(url, { ...init, headers: { ...headers, ...init?.headers }, cache: "no-store" })
     );
 
     if (!response.ok) {

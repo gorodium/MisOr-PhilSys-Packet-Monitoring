@@ -50,11 +50,12 @@ export async function POST(req: NextRequest) {
     let myId: number | null = null;
     try {
       const meRes = await fetch(`${baseUrl}/users/current.json`, {
-        headers: { "X-Redmine-API-Key": matrixApiKey, "Accept": "application/json" }
+        headers: { "X-Redmine-API-Key": matrixApiKey, "Accept": "application/json" },
+        cache: "no-store"
       });
       if (meRes.ok) {
         const meData = await meRes.json();
-        myId = meData.user.id;
+        myId = meData.user?.id;
       }
     } catch (e) {
       // ignore
@@ -64,7 +65,8 @@ export async function POST(req: NextRequest) {
     let targetAssigneeId: number | undefined;
     try {
       const issueRes = await fetch(`${baseUrl}/issues/${ticketId}.json?include=journals`, {
-        headers: { "X-Redmine-API-Key": matrixApiKey, "Accept": "application/json" }
+        headers: { "X-Redmine-API-Key": matrixApiKey, "Accept": "application/json" },
+        cache: "no-store"
       });
       if (issueRes.ok) {
         const issueData = await issueRes.json();
