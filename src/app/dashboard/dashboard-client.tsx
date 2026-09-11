@@ -30,28 +30,60 @@ type RemarksBadge = {
   color: string;
 };
 
-function detectRemarksBadge(reply: string | null): RemarksBadge | null {
-  if (!reply) return null;
-  const r = reply.toLowerCase();
-  if (r.includes("available to download") || r.includes("available for download"))
-    return { label: "Available to Download", bg: "#dcfce7", color: "#166534" };
-  if (r.includes("backend restoration") || r.includes("for backend restoration"))
-    return { label: "For Backend Restoration", bg: "#ffedd5", color: "#9a3412" };
-  if (r.includes("still processing on the backend") || r.includes("still in process") || r.includes("awaiting") || r.includes("still processing"))
-    return { label: "Still in Process", bg: "#dbeafe", color: "#1e40af" };
-  if (r.includes("potential duplicate") || r.includes("duplicate match") || r.includes("identified with a potential duplicate"))
-    return { label: "Potential Duplicate", bg: "#f3e8ff", color: "#6b21a8" };
-  if (r.includes("biometrics") || r.includes("biometric"))
-    return { label: "Biometrics Issue", bg: "#fef9c3", color: "#854d0e" };
-  if (r.includes("individual authentication") || r.includes("authentication was unsuccessful"))
-    return { label: "Authentication Failed", bg: "#ffe4e6", color: "#9f1239" };
-  return null;
+function getRemarksBadges(packet: PacketRow): RemarksBadge[] {
+  const badges: RemarksBadge[] = [];
+  const tags = packet.matrixTags || [];
+
+  if (tags.includes("available_to_download"))
+    badges.push({ label: "Available to Download", bg: "#dcfce7", color: "#166534" });
+  
+  if (tags.includes("for_backend_restoration") || packet.restorationCommented || packet.restorationUploaded)
+    badges.push({ label: "For Backend Restoration", bg: "#ffedd5", color: "#9a3412" });
+    
+  if (tags.includes("still_in_process"))
+    badges.push({ label: "Still in Process", bg: "#dbeafe", color: "#1e40af" });
+    
+  if (tags.includes("potential_duplicate"))
+    badges.push({ label: "Potential Duplicate", bg: "#f3e8ff", color: "#6b21a8" });
+    
+  if (tags.includes("biometrics_issue"))
+    badges.push({ label: "Biometrics Issue", bg: "#fef9c3", color: "#854d0e" });
+    
+  if (tags.includes("authentication_failed"))
+    badges.push({ label: "Authentication Failed", bg: "#ffe4e6", color: "#9f1239" });
+
+  // If no sync tags yet but the latest reply has it, fallback (for older data)
+  const r = (packet.latestMatrixReply || "").toLowerCase();
+  if (badges.length === 0 && r) {
+    if (r.includes("available to download") || r.includes("available for download"))
+      badges.push({ label: "Available to Download", bg: "#dcfce7", color: "#166534" });
+    if (r.includes("backend restoration") || r.includes("for backend restoration"))
+      badges.push({ label: "For Backend Restoration", bg: "#ffedd5", color: "#9a3412" });
+    if (r.includes("still processing on the backend") || r.includes("still in process") || r.includes("awaiting") || r.includes("still processing"))
+      badges.push({ label: "Still in Process", bg: "#dbeafe", color: "#1e40af" });
+    if (r.includes("potential duplicate") || r.includes("duplicate match") || r.includes("identified with a potential duplicate"))
+      badges.push({ label: "Potential Duplicate", bg: "#f3e8ff", color: "#6b21a8" });
+    if (r.includes("biometrics") || r.includes("biometric"))
+      badges.push({ label: "Biometrics Issue", bg: "#fef9c3", color: "#854d0e" });
+    if (r.includes("individual authentication") || r.includes("authentication was unsuccessful"))
+      badges.push({ label: "Authentication Failed", bg: "#ffe4e6", color: "#9f1239" });
+  }
+
+  // Deduplicate
+  return badges.filter((b, index, self) => index === self.findIndex(t => t.label === b.label));
 }
 
-function matchesRemarksFilter(reply: string | null, filter: string): boolean {
+function matchesRemarksFilter(packet: PacketRow, filter: string): boolean {
   if (!filter) return true;
-  if (!reply) return false;
-  const r = reply.toLowerCase();
+  
+  if (filter === "for_backend_restoration") {
+    if (packet.restorationCommented || packet.restorationUploaded) return true;
+  }
+  
+  if (packet.matrixTags && packet.matrixTags.includes(filter)) return true;
+  
+  // fallback for older data
+  const r = (packet.latestMatrixReply || "").toLowerCase();
   switch (filter) {
     case "available_to_download": return r.includes("available to download") || r.includes("available for download");
     case "for_backend_restoration": return r.includes("backend restoration") || r.includes("for backend restoration");
@@ -76,6 +108,10 @@ type PacketRow = {
   statusLabel: string;
   ticketNumber: string | null;
   latestMatrixReply: string | null;
+  latestMatrixReplyDate: string | null;
+  matrixTags: string[];
+  restorationUploaded: boolean;
+  restorationCommented: boolean;
   latestMatrixReplyAuthor: string | null;
   lastCheckedAt: string | null;
 };
@@ -334,8 +370,8 @@ export function DashboardClient({ isAdmin = false }: { isAdmin?: boolean }) {
               </tr>
             </thead>
             <tbody>
-              {data.packets.filter(packet => matchesRemarksFilter(packet.latestMatrixReply, remarksFilter)).map((packet) => {
-                const badge = detectRemarksBadge(packet.latestMatrixReply);
+              {data.packets.filter(packet => matchesRemarksFilter(packet, remarksFilter)).map((packet) => {
+                const badges = getRemarksBadges(packet);
                 return (
                 <tr
                   key={packet.id}
@@ -353,20 +389,21 @@ export function DashboardClient({ isAdmin = false }: { isAdmin?: boolean }) {
                         </span>
                       </div>
                     ) : null}
-                    {badge && (
-                      <div style={{ marginTop: "4px" }}>
-                        <span style={{
-                          display: "inline-block",
-                          padding: "2px 8px",
-                          borderRadius: "9999px",
-                          fontSize: "0.7rem",
-                          fontWeight: 600,
-                          backgroundColor: badge.bg,
-                          color: badge.color,
-                          letterSpacing: "0.02em"
-                        }}>
-                          {badge.label}
-                        </span>
+                    {badges.length > 0 && (
+                      <div style={{ marginTop: "4px", display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                        {badges.map(b => (
+                          <span key={b.label} style={{
+                            display: "inline-block",
+                            padding: "2px 8px",
+                            borderRadius: "9999px",
+                            fontSize: "0.7rem",
+                            fontWeight: 600,
+                            backgroundColor: b.bg,
+                            color: b.color
+                          }}>
+                            {b.label}
+                          </span>
+                        ))}
                       </div>
                     )}
                   </td>

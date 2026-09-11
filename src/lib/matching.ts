@@ -12,6 +12,20 @@ type TicketMatch = {
   matchType: MatchType;
   relevantReplies: RelevantReply[];
 };
+function extractTagsFromReplies(replies: RelevantReply[]): string[] {
+  const tags = new Set<string>();
+  for (const reply of replies) {
+    if (!reply.body) continue;
+    const r = reply.body.toLowerCase();
+    if (r.includes("available to download") || r.includes("available for download")) tags.add("available_to_download");
+    if (r.includes("backend restoration") || r.includes("for backend restoration")) tags.add("for_backend_restoration");
+    if (r.includes("still processing on the backend") || r.includes("still in process") || r.includes("awaiting") || r.includes("still processing")) tags.add("still_in_process");
+    if (r.includes("potential duplicate") || r.includes("duplicate match") || r.includes("identified with a potential duplicate")) tags.add("potential_duplicate");
+    if (r.includes("biometrics") || r.includes("biometric")) tags.add("biometrics_issue");
+    if (r.includes("individual authentication") || r.includes("authentication was unsuccessful")) tags.add("authentication_failed");
+  }
+  return Array.from(tags);
+}
 
 
 function ticketContainsPacket(ticket: MatrixTicketRecord, packetCode: string) {
@@ -116,6 +130,7 @@ async function applyPacketMatches(packet: Packet, matches: TicketMatch[]) {
         latestMatrixReply: null,
         latestMatrixReplyAuthor: null,
         latestMatrixReplyDate: null,
+        matrixTags: [],
         syncStatus: PacketSyncStatus.NOT_FILED,
         lastCheckedAt: new Date()
       }
@@ -146,6 +161,7 @@ async function applyPacketMatches(packet: Packet, matches: TicketMatch[]) {
         latestMatrixReply: null,
         latestMatrixReplyAuthor: null,
         latestMatrixReplyDate: null,
+        matrixTags: [],
         syncStatus: PacketSyncStatus.NEEDS_REVIEW,
         lastCheckedAt: new Date()
       }
@@ -155,6 +171,8 @@ async function applyPacketMatches(packet: Packet, matches: TicketMatch[]) {
 
   const match = matches[0];
   const reply = latestReply(match.relevantReplies);
+  const allTags = extractTagsFromReplies(match.relevantReplies);
+  
   await prisma.packet.update({
     where: { id: packet.id },
     data: {
@@ -165,6 +183,7 @@ async function applyPacketMatches(packet: Packet, matches: TicketMatch[]) {
       latestMatrixReply: reply?.body ?? null,
       latestMatrixReplyAuthor: reply?.author ?? null,
       latestMatrixReplyDate: reply?.createdAt ?? null,
+      matrixTags: allTags,
       syncStatus: PacketSyncStatus.FILED,
       lastCheckedAt: new Date()
     }
