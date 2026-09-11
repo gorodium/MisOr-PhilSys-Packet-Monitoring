@@ -227,6 +227,30 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
     }
   }
 
+  const [activeTab, setActiveTab] = useState<"pending" | "filed">("pending");
+
+  const pendingRequests = requests.filter(r => r.status !== "FILED");
+  const filedRequests = requests.filter(r => r.status === "FILED");
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const startOfWeek = new Date(today);
+  startOfWeek.setDate(today.getDate() - today.getDay());
+  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+  let filedToday = 0;
+  let filedWeek = 0;
+  let filedMonth = 0;
+
+  filedRequests.forEach(req => {
+    const d = new Date(req.createdAt);
+    if (d >= today) filedToday++;
+    if (d >= startOfWeek) filedWeek++;
+    if (d >= startOfMonth) filedMonth++;
+  });
+
+  const displayRequests = activeTab === "pending" ? pendingRequests : filedRequests;
+
   return (
     <>
       <header className="page-header">
@@ -236,11 +260,55 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
         </div>
       </header>
 
+      <section className="kpi-grid" aria-label="Filing stats" style={{ marginBottom: "24px" }}>
+        <div className="kpi-card">
+          <div className="kpi-label">Filed Today</div>
+          <div className="kpi-value">{filedToday}</div>
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-label">Filed This Week</div>
+          <div className="kpi-value">{filedWeek}</div>
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-label">Filed This Month</div>
+          <div className="kpi-value">{filedMonth}</div>
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-label">Filed Overall</div>
+          <div className="kpi-value">{filedRequests.length}</div>
+        </div>
+      </section>
+
+      <div style={{ display: "flex", gap: "16px", marginBottom: "16px", borderBottom: "1px solid var(--border)" }}>
+        <button 
+          onClick={() => setActiveTab("pending")}
+          style={{ 
+            background: "none", border: "none", cursor: "pointer", 
+            padding: "8px 16px", fontSize: "14px", fontWeight: 500,
+            borderBottom: activeTab === "pending" ? "2px solid var(--primary)" : "2px solid transparent",
+            color: activeTab === "pending" ? "var(--primary-dark)" : "var(--muted)"
+          }}
+        >
+          Pending ({pendingRequests.length})
+        </button>
+        <button 
+          onClick={() => setActiveTab("filed")}
+          style={{ 
+            background: "none", border: "none", cursor: "pointer", 
+            padding: "8px 16px", fontSize: "14px", fontWeight: 500,
+            borderBottom: activeTab === "filed" ? "2px solid var(--primary)" : "2px solid transparent",
+            color: activeTab === "filed" ? "var(--primary-dark)" : "var(--muted)"
+          }}
+        >
+          Filed ({filedRequests.length})
+        </button>
+      </div>
+
       <section className="panel" style={{ overflowX: "auto" }}>
         {loadingRequests ? (
           <p className="muted" style={{ padding: "20px" }}>Loading requests...</p>
-        ) : requests.length === 0 ? (
-          <p className="muted" style={{ padding: "20px" }}>No requests submitted yet.</p>
+        ) : displayRequests.length === 0 ? (
+          <p className="muted" style={{ padding: "20px" }}>No {activeTab} requests.</p>
         ) : (
           <table className="data-table" style={{ width: "100%", textAlign: "left", borderCollapse: "collapse" }}>
             <thead>
@@ -253,7 +321,7 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
               </tr>
             </thead>
             <tbody>
-              {requests.map(req => (
+              {displayRequests.map(req => (
                 <tr key={req.id} style={{ borderBottom: "1px solid var(--border)", fontSize: "0.9rem" }}>
                   <td style={{ verticalAlign: "middle" }}>{new Date(req.createdAt).toLocaleDateString()} {new Date(req.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
                   <td style={{ fontFamily: "monospace", verticalAlign: "middle" }}>{req.trn}</td>

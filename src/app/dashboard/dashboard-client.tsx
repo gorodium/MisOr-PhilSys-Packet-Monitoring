@@ -96,6 +96,8 @@ type PacketResponse = {
     needsReview: number;
     withLatestReply: number;
     errors: number;
+    pendingFilingRequests?: number;
+    totalTicketsFiled?: number;
   };
   lastSyncedAt: string | null;
 };
@@ -103,7 +105,7 @@ type PacketResponse = {
 const emptyResponse: PacketResponse = {
   packets: [],
   pagination: { page: 1, pageSize: PAGE_SIZE, total: 0, totalPages: 1 },
-  counts: { total: 0, filed: 0, notFiled: 0, needsReview: 0, withLatestReply: 0, errors: 0 },
+  counts: { total: 0, filed: 0, notFiled: 0, needsReview: 0, withLatestReply: 0, errors: 0, pendingFilingRequests: 0, totalTicketsFiled: 0 },
   lastSyncedAt: null
 };
 
@@ -223,7 +225,9 @@ export function DashboardClient({ isAdmin = false }: { isAdmin?: boolean }) {
     ["Not Filed", counts.notFiled],
     ["Needs Review", counts.needsReview],
     ["With Latest Reply", counts.withLatestReply],
-    ["Sync Errors", counts.errors]
+    ["Sync Errors", counts.errors],
+    ["Pending Filing", counts.pendingFilingRequests ?? 0],
+    ["Total Filed", counts.totalTicketsFiled ?? 0]
   ];
 
   return (

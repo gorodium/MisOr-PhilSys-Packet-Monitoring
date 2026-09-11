@@ -69,7 +69,9 @@ export async function GET(request: NextRequest) {
       needsReview,
       errors,
       withLatestReply,
-      latestSync
+      latestSync,
+      pendingFilingRequests,
+      totalTicketsFiled
     ] = await Promise.all([
       prisma.packet.findMany({
         where,
@@ -87,7 +89,9 @@ export async function GET(request: NextRequest) {
       prisma.syncLog.findFirst({
         where: { finishedAt: { not: null } },
         orderBy: { finishedAt: "desc" }
-      })
+      }),
+      prisma.matrixFilingRequest.count({ where: { status: "PENDING" } }),
+      prisma.matrixFilingRequest.count({ where: { status: "FILED" } })
     ]);
 
     const totalPages = Math.max(1, Math.ceil(filteredTotal / query.pageSize));
@@ -111,7 +115,9 @@ export async function GET(request: NextRequest) {
         notFiled,
         needsReview,
         withLatestReply,
-        errors
+        errors,
+        pendingFilingRequests,
+        totalTicketsFiled
       },
       lastSyncedAt: latestSync?.finishedAt ?? null
     });
