@@ -130,58 +130,89 @@ export default async function PacketDetailPage({ params }: { params: Promise<{ i
         </section>
       )}
 
-      <div className="grid-two" style={{ marginTop: 14 }}>
-        {/* Ticket History (formerly Matched Text Snippets) */}
-        <section className="panel">
-          <div className="panel-header">
+      <div style={{ marginTop: 14 }}>
+        {/* Ticket History */}
+        <section className="panel" style={{ display: "flex", flexDirection: "column", maxHeight: "600px" }}>
+          <div className="panel-header" style={{ flexShrink: 0 }}>
             <h2 className="panel-title">Ticket History</h2>
           </div>
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Ticket</th>
-                  <th>Match Type</th>
-                  <th>User</th>
-                  <th>Snippet</th>
-                </tr>
-              </thead>
-              <tbody>
-                {packet.matches.map((match) => (
-                  <tr key={match.id}>
-                    <td className="mono">{match.matrixTicket.ticketNumber}</td>
-                    <td>{match.matchType}</td>
-                    <td>{match.matrixTicket.author ?? "—"}</td>
-                    <td>{match.matchedText}</td>
-                  </tr>
-                ))}
-                {packet.matches.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="muted">
-                      No matches recorded.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        </section>
+          <div style={{ padding: "16px", overflowY: "auto", flexGrow: 1, display: "flex", flexDirection: "column", gap: "24px" }}>
+            {(() => {
+              const uniqueTickets = Array.from(new Map(packet.matches.map(m => [m.matrixTicket.id, m.matrixTicket])).values());
+              if (uniqueTickets.length === 0) {
+                return <span className="muted">No matches recorded.</span>;
+              }
 
-        <section className="panel">
-          <div className="panel-header">
-            <h2 className="panel-title">Latest Matrix Reply</h2>
-          </div>
-          <div style={{ padding: 14 }}>
-            {packet.latestMatrixReply ? (
-              <>
-                <pre className="pre">{packet.latestMatrixReply}</pre>
-                <p className="muted">
-                  {packet.latestMatrixReplyAuthor ?? "Unknown author"} - {formatDate(packet.latestMatrixReplyDate)}
-                </p>
-              </>
-            ) : (
-              <span className="muted">No relevant reply recorded.</span>
-            )}
+              return uniqueTickets.map(ticket => {
+                const rawData = ticket.rawData as any;
+                
+                // Combine original description and replies
+                const timeline = [];
+                if (rawData?.description) {
+                  timeline.push({
+                    id: `desc-${ticket.id}`,
+                    author: ticket.author ?? (rawData?.author?.name) ?? "Unknown",
+                    createdAt: ticket.createdAtMatrix ?? rawData?.created_on,
+                    text: rawData.description,
+                    isOriginal: true
+                  });
+                }
+                
+                if (rawData?.journals && Array.isArray(rawData.journals)) {
+                  rawData.journals.forEach((j: any) => {
+                    if (j.notes && j.notes.trim()) {
+                      timeline.push({
+                        id: `journal-${j.id}`,
+                        author: j.user?.name ?? "Unknown",
+                        createdAt: j.created_on,
+                        text: j.notes,
+                        isOriginal: false
+                      });
+                    }
+                  });
+                }
+
+                // Sort ascending by date
+                timeline.sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
+
+                return (
+                  <div key={ticket.id} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                    {uniqueTickets.length > 1 && (
+                      <h3 style={{ fontSize: "14px", fontWeight: 600, borderBottom: "1px solid var(--border)", paddingBottom: "8px" }}>
+                        Ticket: {ticket.ticketNumber}
+                      </h3>
+                    )}
+                    {timeline.length === 0 ? (
+                      <span className="muted" style={{ fontSize: "13px" }}>No description or replies.</span>
+                    ) : (
+                      timeline.map(item => (
+                        <div key={item.id} style={{
+                          background: item.isOriginal ? "var(--surface)" : "var(--background)",
+                          border: "1px solid var(--border)",
+                          borderRadius: "8px",
+                          overflow: "hidden"
+                        }}>
+                          <div style={{ 
+                            background: "var(--border)", 
+                            padding: "6px 12px", 
+                            fontSize: "12px", 
+                            display: "flex", 
+                            justifyContent: "space-between",
+                            color: "var(--muted)"
+                          }}>
+                            <strong>{item.author}</strong>
+                            <span>{formatDate(item.createdAt)}</span>
+                          </div>
+                          <div style={{ padding: "12px", fontSize: "13px", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                            {item.text}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                );
+              });
+            })()}
           </div>
         </section>
       </div>
