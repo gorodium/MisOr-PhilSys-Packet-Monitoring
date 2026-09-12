@@ -426,7 +426,7 @@ export function DashboardClient({ isAdmin = false }: { isAdmin?: boolean }) {
                 </tr>
                 );
               })}
-              {!loading && data.packets.filter(p => matchesRemarksFilter(p.latestMatrixReply, remarksFilter)).length === 0 ? (
+              {!loading && data.packets.filter(p => matchesRemarksFilter(p, remarksFilter)).length === 0 ? (
                 <tr>
                   <td colSpan={4} className="muted">
                     No packets match the current filters.
