@@ -159,7 +159,7 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
       initialCategory = "NO PSN";
       const joshua = assigneesList.find(a => a.name.toLowerCase().includes("joshua"));
       if (joshua) initialAssigneeId = joshua.id;
-    } else if (lowerRemarks.includes("no photo/qr") || lowerRemarks.includes("no photo")) {
+    } else if (lowerRemarks.includes("no photo") || lowerRemarks.includes("no qr")) {
       const aaron = assigneesList.find(a => a.name.toLowerCase().includes("aaron"));
       if (aaron) initialAssigneeId = aaron.id;
     }

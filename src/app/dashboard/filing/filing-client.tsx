@@ -177,7 +177,9 @@ export function FilingClient() {
                     <option value="Unclickable">Unclickable</option>
                     <option value="Still in progress">Still in progress</option>
                     <option value="Failed Registration">Failed Registration</option>
-                    <option value="No Photo/QR">No Photo/QR</option>
+                    <option value="No Photo">No Photo</option>
+                    <option value="No QR">No QR</option>
+                    <option value="No Photo and QR">No Photo and QR</option>
                     <option value="Others">Others</option>
                   </select>
                 </div>
