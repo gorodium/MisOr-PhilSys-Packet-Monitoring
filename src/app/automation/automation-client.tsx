@@ -15,6 +15,7 @@ type RestorePacket = {
   latestMatrixReply: string | null;
   proLptFolder: string;
   province: string;
+  requiredInitialTrn: string | null;
 };
 
 type StepLine = { text: string; type: "info" | "ok" | "error" | "warn" };
@@ -94,15 +95,17 @@ export function AutomationClient() {
           latestMatrixReply: p.latestMatrixReply ?? null,
           proLptFolder: p.proLptFolder ?? "",
           province: p.province ?? "",
+          requiredInitialTrn: p.requiredInitialTrn ?? null,
         });
 
         if (p.restorationUploaded || p.restorationCommented) {
+          const trnToUse = p.requiredInitialTrn || p.packetCode;
           newJobs.set(p.id, {
             phase: "success",
             steps: [{ text: "✅ Recovered from previous session", type: "ok" }],
-            uploadedTo: `/Misamis Oriental/ePhilID TRN Concerns/${p.ticketNumber}/${p.packetCode}.zip`,
+            uploadedTo: `/Misamis Oriental/ePhilID TRN Concerns/${p.ticketNumber}/${trnToUse}.zip`,
             destFolder: `/Misamis Oriental/ePhilID TRN Concerns/${p.ticketNumber}`,
-            packetName: `${p.packetCode}.zip`,
+            packetName: `${trnToUse}.zip`,
             alreadyUploaded: true,
             commentPosted: p.restorationCommented === true,
             isRestored: true,
@@ -140,7 +143,7 @@ export function AutomationClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           packetId: packet.id,
-          trn: packet.packetCode,
+          trn: packet.requiredInitialTrn || packet.packetCode,
           ticketId: packet.ticketId,
           ticketNumber: packet.ticketNumber,
           proLptFolder: packet.proLptFolder || undefined,
@@ -296,10 +299,31 @@ export function AutomationClient() {
                             color: "var(--foreground)",
                             wordBreak: "break-all",
                           }}>
-                            {packet.packetCode}
+                            {packet.requiredInitialTrn || packet.packetCode}
                           </div>
+                          {packet.requiredInitialTrn && (
+                            <div style={{
+                              fontSize: "0.75rem",
+                              marginTop: 4,
+                              color: "var(--muted)",
+                            }}>
+                              Original: {packet.packetCode}
+                            </div>
+                          )}
                           {(packet.proLptFolder || packet.province) && (
                             <div style={{ fontSize: "0.75rem", marginTop: 4, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                              {packet.requiredInitialTrn && (
+                                <span style={{
+                                  background: "#fef08a",
+                                  color: "#854d0e",
+                                  padding: "1px 7px",
+                                  borderRadius: 4,
+                                  fontWeight: 700,
+                                  fontSize: "0.72rem",
+                                }}>
+                                  Initial Registration
+                                </span>
+                              )}
                               {packet.proLptFolder && (
                                 <span style={{
                                   background: "#dbeafe",

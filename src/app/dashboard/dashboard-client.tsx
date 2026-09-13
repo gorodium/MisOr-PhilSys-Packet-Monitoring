@@ -112,6 +112,7 @@ type PacketRow = {
   matrixTags: string[];
   restorationUploaded: boolean;
   restorationCommented: boolean;
+  requiredInitialTrn: string | null;
   latestMatrixReplyAuthor: string | null;
   lastCheckedAt: string | null;
 };
@@ -372,7 +373,12 @@ export function DashboardClient({ isAdmin = false }: { isAdmin?: boolean }) {
                   title="Open packet details"
                 >
                   <td>
-                    <strong className="mono">{packet.normalizedPacketCode}</strong>
+                    <strong className="mono">{packet.requiredInitialTrn || packet.normalizedPacketCode}</strong>
+                    {packet.requiredInitialTrn && (
+                      <div className="muted" style={{ fontSize: "0.75rem", marginTop: "2px" }}>
+                        Original: {packet.normalizedPacketCode}
+                      </div>
+                    )}
                     <div className="muted">{packet.issueCategory ?? "Unspecified"}</div>
                     {packet.proLptFolder ? (
                       <div className="muted" style={{ fontSize: "0.75rem", marginTop: "4px" }}>

@@ -12,13 +12,13 @@ type TicketMatch = {
   matchType: MatchType;
   relevantReplies: RelevantReply[];
 };
-function extractTagsFromReplies(replies: RelevantReply[]): string[] {
+function extractTagsFromReplies(replies: any[]): string[] {
   const tags = new Set<string>();
   for (const reply of replies) {
     if (!reply.body) continue;
     const r = reply.body.toLowerCase();
     if (r.includes("available to download") || r.includes("available for download")) tags.add("available_to_download");
-    if (r.includes("backend restoration") || r.includes("for backend restoration")) tags.add("for_backend_restoration");
+    if (r.includes("backend restoration") || r.includes("for backend restoration") || r.includes("initial registration")) tags.add("for_backend_restoration");
     if (r.includes("still processing on the backend") || r.includes("still in process") || r.includes("awaiting") || r.includes("still processing")) tags.add("still_in_process");
     if (r.includes("potential duplicate") || r.includes("duplicate match") || r.includes("identified with a potential duplicate")) tags.add("potential_duplicate");
     if (r.includes("biometrics") || r.includes("biometric")) tags.add("biometrics_issue");
@@ -131,6 +131,7 @@ async function applyPacketMatches(packet: Packet, matches: TicketMatch[]) {
         latestMatrixReplyAuthor: null,
         latestMatrixReplyDate: null,
         matrixTags: [],
+        requiredInitialTrn: null,
         syncStatus: PacketSyncStatus.NOT_FILED,
         lastCheckedAt: new Date()
       }
@@ -162,6 +163,7 @@ async function applyPacketMatches(packet: Packet, matches: TicketMatch[]) {
         latestMatrixReplyAuthor: null,
         latestMatrixReplyDate: null,
         matrixTags: [],
+        requiredInitialTrn: null,
         syncStatus: PacketSyncStatus.NEEDS_REVIEW,
         lastCheckedAt: new Date()
       }
@@ -173,6 +175,16 @@ async function applyPacketMatches(packet: Packet, matches: TicketMatch[]) {
   const reply = latestReply(match.relevantReplies);
   const allTags = extractTagsFromReplies(match.relevantReplies);
   
+  let requiredInitialTrn = null;
+  for (const rep of match.relevantReplies) {
+    if (!rep.body) continue;
+    const matchTrn = rep.body.match(/Initial REGISTRATION:\s*(\d+)/i);
+    if (matchTrn && matchTrn[1]) {
+      requiredInitialTrn = matchTrn[1];
+      break;
+    }
+  }
+
   await prisma.packet.update({
     where: { id: packet.id },
     data: {
@@ -184,6 +196,7 @@ async function applyPacketMatches(packet: Packet, matches: TicketMatch[]) {
       latestMatrixReplyAuthor: reply?.author ?? null,
       latestMatrixReplyDate: reply?.createdAt ?? null,
       matrixTags: allTags,
+      requiredInitialTrn,
       syncStatus: PacketSyncStatus.FILED,
       lastCheckedAt: new Date()
     }

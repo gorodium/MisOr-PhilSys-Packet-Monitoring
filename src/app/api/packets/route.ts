@@ -45,7 +45,15 @@ export async function GET(request: NextRequest) {
     const where = {
       ...(status ? { syncStatus: status } : {}),
       ...(query.status === "for_backend_restoration"
-        ? { latestMatrixReply: { contains: "backend restoration", mode: "insensitive" as const } }
+        ? {
+            OR: [
+              { matrixTags: { has: "for_backend_restoration" } },
+              { latestMatrixReply: { contains: "backend restoration", mode: "insensitive" as const } },
+              { latestMatrixReply: { contains: "initial registration", mode: "insensitive" as const } },
+              { restorationUploaded: true },
+              { restorationCommented: true }
+            ]
+          }
         : {}),
       ...(category ? { issueCategory: category } : {}),
       ...(normalizedSearch
