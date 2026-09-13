@@ -248,6 +248,7 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
   }
 
   const [activeTab, setActiveTab] = useState<"pending" | "filed">("pending");
+  const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
 
   const pendingRequests = requests.filter(r => r.status !== "FILED");
   const filedRequests = requests.filter(r => r.status === "FILED");
@@ -270,6 +271,11 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
   });
 
   const displayRequests = activeTab === "pending" ? pendingRequests : filedRequests;
+  const sortedDisplayRequests = [...displayRequests].sort((a, b) => {
+    const dateA = new Date(a.createdAt).getTime();
+    const dateB = new Date(b.createdAt).getTime();
+    return sortOrder === "desc" ? dateB - dateA : dateA - dateB;
+  });
 
   return (
     <>
@@ -299,29 +305,42 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
         </div>
       </section>
 
-      <div style={{ display: "flex", gap: "16px", marginBottom: "16px", borderBottom: "1px solid var(--border)" }}>
-        <button 
-          onClick={() => setActiveTab("pending")}
-          style={{ 
-            background: "none", border: "none", cursor: "pointer", 
-            padding: "8px 16px", fontSize: "14px", fontWeight: 500,
-            borderBottom: activeTab === "pending" ? "2px solid var(--primary)" : "2px solid transparent",
-            color: activeTab === "pending" ? "var(--primary-dark)" : "var(--muted)"
-          }}
-        >
-          Pending ({pendingRequests.length})
-        </button>
-        <button 
-          onClick={() => setActiveTab("filed")}
-          style={{ 
-            background: "none", border: "none", cursor: "pointer", 
-            padding: "8px 16px", fontSize: "14px", fontWeight: 500,
-            borderBottom: activeTab === "filed" ? "2px solid var(--primary)" : "2px solid transparent",
-            color: activeTab === "filed" ? "var(--primary-dark)" : "var(--muted)"
-          }}
-        >
-          Filed ({filedRequests.length})
-        </button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", borderBottom: "1px solid var(--border)" }}>
+        <div style={{ display: "flex", gap: "16px" }}>
+          <button 
+            onClick={() => setActiveTab("pending")}
+            style={{ 
+              background: "none", border: "none", cursor: "pointer", 
+              padding: "8px 16px", fontSize: "14px", fontWeight: 500,
+              borderBottom: activeTab === "pending" ? "2px solid var(--primary)" : "2px solid transparent",
+              color: activeTab === "pending" ? "var(--primary-dark)" : "var(--muted)"
+            }}
+          >
+            Pending ({pendingRequests.length})
+          </button>
+          <button 
+            onClick={() => setActiveTab("filed")}
+            style={{ 
+              background: "none", border: "none", cursor: "pointer", 
+              padding: "8px 16px", fontSize: "14px", fontWeight: 500,
+              borderBottom: activeTab === "filed" ? "2px solid var(--primary)" : "2px solid transparent",
+              color: activeTab === "filed" ? "var(--primary-dark)" : "var(--muted)"
+            }}
+          >
+            Filed ({filedRequests.length})
+          </button>
+        </div>
+        <div style={{ paddingBottom: "8px" }}>
+          <select 
+            className="select" 
+            value={sortOrder} 
+            onChange={(e) => setSortOrder(e.target.value as "desc" | "asc")}
+            style={{ fontSize: "13px", padding: "4px 8px", minHeight: "unset" }}
+          >
+            <option value="desc">Newest to Oldest</option>
+            <option value="asc">Oldest to Newest</option>
+          </select>
+        </div>
       </div>
 
       <section className="panel" style={{ overflowX: "auto" }}>
@@ -341,7 +360,7 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
               </tr>
             </thead>
             <tbody>
-              {displayRequests.map(req => (
+              {sortedDisplayRequests.map(req => (
                 <tr key={req.id} style={{ borderBottom: "1px solid var(--border)", fontSize: "0.9rem" }}>
                   <td style={{ verticalAlign: "middle" }}>{new Date(req.createdAt).toLocaleDateString()} {new Date(req.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
                   <td style={{ fontFamily: "monospace", verticalAlign: "middle" }}>{req.trn}</td>
