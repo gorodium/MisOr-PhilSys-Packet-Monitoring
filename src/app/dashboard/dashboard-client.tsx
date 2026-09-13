@@ -258,10 +258,7 @@ export function DashboardClient({ isAdmin = false }: { isAdmin?: boolean }) {
   const kpis = [
     ["Total Packets", counts.total],
     ["Filed in Ticket", counts.filed],
-    ["Not Filed", counts.notFiled],
-    ["Needs Review", counts.needsReview],
     ["With Latest Reply", counts.withLatestReply],
-    ["Sync Errors", counts.errors],
     ["Pending Filing", counts.pendingFilingRequests ?? 0],
     ["Total Filed", counts.totalTicketsFiled ?? 0]
   ];
@@ -290,60 +287,55 @@ export function DashboardClient({ isAdmin = false }: { isAdmin?: boolean }) {
         ))}
       </section>
 
-      <div className="toolbar">
-        <div className="toolbar-group">
-          <Search size={16} className="muted" />
-          <input
-            id="dashboard-search"
-            className="input search-input"
-            value={searchInput}
-            onChange={(event) => handleSearchChange(event.target.value)}
-            placeholder="Search packet code"
-          />
-        </div>
-        <div className="toolbar-group">
-          <SlidersHorizontal size={16} className="muted" />
-          <select
-            id="dashboard-category-filter"
-            className="select"
-            value={category}
-            onChange={(event) => handleCategoryChange(event.target.value)}
-          >
-            {ISSUE_FILTERS.map((filter) => (
-              <option key={filter} value={filter}>
-                {filter}
-              </option>
-            ))}
-          </select>
-          <select
-            id="dashboard-status-filter"
-            className="select"
-            value={status}
-            onChange={(event) => handleStatusChange(event.target.value)}
-          >
-            {statusFilters.map((filter) => (
-              <option key={filter.value} value={filter.value}>
-                {filter.label}
-              </option>
-            ))}
-          </select>
-          <select
-            id="dashboard-remarks-filter"
-            className="select"
-            value={remarksFilter}
-            onChange={(event) => { setRemarksFilter(event.target.value); setPage(1); }}
-          >
-            {remarksFilters.map((filter) => (
-              <option key={filter.value} value={filter.value}>
-                {filter.label}
-              </option>
-            ))}
-          </select>
-          <button className="btn btn-ghost" onClick={loadPackets} disabled={loading} title="Refresh table">
-            <RefreshCw size={16} />
-            Refresh
-          </button>
-        </div>
+      <div className="toolbar" style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
+        <input
+          id="dashboard-search"
+          className="input search-input"
+          value={searchInput}
+          onChange={(event) => handleSearchChange(event.target.value)}
+          placeholder="Search packet code"
+          style={{ flex: "1", minWidth: "200px" }}
+        />
+        <select
+          id="dashboard-category-filter"
+          className="select"
+          value={category}
+          onChange={(event) => handleCategoryChange(event.target.value)}
+        >
+          {ISSUE_FILTERS.map((filter) => (
+            <option key={filter} value={filter}>
+              {filter}
+            </option>
+          ))}
+        </select>
+        <select
+          id="dashboard-status-filter"
+          className="select"
+          value={status}
+          onChange={(event) => handleStatusChange(event.target.value)}
+        >
+          {statusFilters.map((sf) => (
+            <option key={sf.value} value={sf.value}>
+              {sf.label}
+            </option>
+          ))}
+        </select>
+        <select
+          id="dashboard-remarks-filter"
+          className="select"
+          value={remarksFilter}
+          onChange={(event) => { setRemarksFilter(event.target.value); setPage(1); }}
+        >
+          {remarksFilters.map((rf) => (
+            <option key={rf.value} value={rf.value}>
+              {rf.label}
+            </option>
+          ))}
+        </select>
+        <button className="btn btn-outline" onClick={loadPackets} disabled={loading} style={{ height: "36px", display: "flex", alignItems: "center", gap: "6px" }}>
+          <RefreshCw size={14} className={loading ? "spin" : ""} />
+          Refresh
+        </button>
       </div>
 
       {error ? <div className="alert">{error}</div> : null}
