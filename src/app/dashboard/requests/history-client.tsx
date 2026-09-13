@@ -144,8 +144,28 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
     
     setStatusId(1);
     setPriorityId(2);
-    setAssigneeId("");
-    setCategoryId("");
+
+    // Apply default assignee and category based on remarks
+    let initialAssigneeId: number | "" = "";
+    let initialCategory = "";
+
+    const lowerRemarks = req.remarks ? req.remarks.toLowerCase() : "";
+
+    if (lowerRemarks.includes("unclickable")) {
+      initialCategory = "With PSN";
+      const aaron = assigneesList.find(a => a.name.toLowerCase().includes("aaron"));
+      if (aaron) initialAssigneeId = aaron.id;
+    } else if (lowerRemarks.includes("still in progress")) {
+      initialCategory = "NO PSN";
+      const joshua = assigneesList.find(a => a.name.toLowerCase().includes("joshua"));
+      if (joshua) initialAssigneeId = joshua.id;
+    } else if (lowerRemarks.includes("no photo/qr") || lowerRemarks.includes("no photo")) {
+      const aaron = assigneesList.find(a => a.name.toLowerCase().includes("aaron"));
+      if (aaron) initialAssigneeId = aaron.id;
+    }
+
+    setAssigneeId(initialAssigneeId);
+    setCategoryId(initialCategory as any);
     
     const today = new Date();
     setStartDate(formatDate(today));
