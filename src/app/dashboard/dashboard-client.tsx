@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, RefreshCw, Search, SlidersHorizontal } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw, Search, SlidersHorizontal, ArchiveRestore, Clock, Download, Copy, Fingerprint, UserX } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StatusBadge } from "@/components/status-badge";
@@ -263,20 +263,20 @@ export function DashboardClient({ isAdmin = false }: { isAdmin?: boolean }) {
   const rowEnd = Math.min(pagination.page * pagination.pageSize, pagination.total);
 
   const mainKpis = [
-    ["Total Packets", counts.total],
-    ["Filed in Ticket", counts.filed],
-    ["With Latest Reply", counts.withLatestReply],
-    ["Pending Filing", counts.pendingFilingRequests ?? 0],
-    ["Total Filed", counts.totalTicketsFiled ?? 0]
+    { label: "Total Packets", value: counts.total },
+    { label: "Filed in Ticket", value: counts.filed },
+    { label: "With Latest Reply", value: counts.withLatestReply },
+    { label: "Pending Filing", value: counts.pendingFilingRequests ?? 0 },
+    { label: "Total Filed", value: counts.totalTicketsFiled ?? 0 }
   ];
 
   const tagKpis = [
-    ["For Backend Restoration", counts.forBackendRestoration ?? 0],
-    ["Still in Process", counts.stillInProcess ?? 0],
-    ["Available to Download", counts.availableToDownload ?? 0],
-    ["Potential Duplicate", counts.potentialDuplicate ?? 0],
-    ["Biometrics Issue", counts.biometricsIssue ?? 0],
-    ["Authentication Failed", counts.authenticationFailed ?? 0]
+    { label: "For Backend Restoration", value: counts.forBackendRestoration ?? 0, color: "#d97706", icon: <ArchiveRestore size={16} /> },
+    { label: "Still in Process", value: counts.stillInProcess ?? 0, color: "#2563eb", icon: <Clock size={16} /> },
+    { label: "Available to Download", value: counts.availableToDownload ?? 0, color: "#16a34a", icon: <Download size={16} /> },
+    { label: "Potential Duplicate", value: counts.potentialDuplicate ?? 0, color: "#ea580c", icon: <Copy size={16} /> },
+    { label: "Biometrics Issue", value: counts.biometricsIssue ?? 0, color: "#dc2626", isError: true, icon: <Fingerprint size={16} /> },
+    { label: "Authentication Failed", value: counts.authenticationFailed ?? 0, color: "#991b1b", isError: true, icon: <UserX size={16} /> }
   ];
 
   return (
@@ -294,25 +294,39 @@ export function DashboardClient({ isAdmin = false }: { isAdmin?: boolean }) {
         )}
       </header>
 
-      <section className="kpi-grid" aria-label="Packet counts" style={{ marginBottom: "20px" }}>
-        {mainKpis.map(([label, value]) => (
-          <div className="kpi-card" key={label}>
-            <div className="kpi-label">{label}</div>
-            <div className="kpi-value">{value}</div>
+      <section className="kpi-grid primary-grid" aria-label="Packet counts">
+        {mainKpis.map((kpi) => (
+          <div className="kpi-card" key={kpi.label}>
+            <div className="kpi-label">{kpi.label}</div>
+            <div className="kpi-value">{kpi.value}</div>
           </div>
         ))}
       </section>
 
-      <div style={{ display: "flex", justifyContent: "center", marginBottom: "24px" }}>
-        <section className="kpi-grid" aria-label="Tag counts" style={{ margin: 0, justifyContent: "center", flex: 1, maxWidth: "1000px" }}>
-          {tagKpis.map(([label, value]) => (
-            <div className="kpi-card" key={label} style={{ background: "var(--surface-hover)", borderStyle: "dashed" }}>
-              <div className="kpi-label">{label}</div>
-              <div className="kpi-value">{value}</div>
+      <section className="kpi-grid secondary-grid" aria-label="Tag counts">
+        {tagKpis.map((kpi) => {
+          const isActive = kpi.value > 0;
+          return (
+            <div 
+              className="kpi-card" 
+              key={kpi.label} 
+              style={{ 
+                backgroundColor: isActive ? `${kpi.color}10` : "var(--surface)",
+                borderColor: isActive ? `${kpi.color}40` : "var(--border)"
+              }}
+            >
+              <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "4px", backgroundColor: isActive ? kpi.color : "transparent" }} />
+              <div className="kpi-label" style={{ color: isActive && kpi.isError ? "var(--foreground)" : "var(--muted)" }}>
+                <span style={{ color: isActive ? kpi.color : "var(--muted)", display: "flex" }}>
+                  {kpi.icon}
+                </span>
+                {kpi.label}
+              </div>
+              <div className="kpi-value">{kpi.value}</div>
             </div>
-          ))}
-        </section>
-      </div>
+          );
+        })}
+      </section>
 
       <div className="toolbar" style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
         <input

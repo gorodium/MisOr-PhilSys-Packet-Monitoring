@@ -260,31 +260,73 @@ button {
   color: #fff;
 }
 
+/* --- KPI Grid Styles --- */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 10px;
-  margin-bottom: 14px;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.kpi-grid.primary-grid {
+  grid-template-columns: repeat(5, 1fr);
+}
+.kpi-grid.secondary-grid {
+  grid-template-columns: repeat(6, 1fr);
+}
+
+@media (max-width: 1300px) {
+  .kpi-grid.primary-grid,
+  .kpi-grid.secondary-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .kpi-grid.primary-grid,
+  .kpi-grid.secondary-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .kpi-grid.primary-grid,
+  .kpi-grid.secondary-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .kpi-card {
-  min-height: 82px;
-  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 96px;
   border-radius: 8px;
   background: var(--surface);
-  padding: 12px;
-  box-shadow: var(--shadow);
+  padding: 16px;
+  border: 1px solid var(--border);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .kpi-label {
+  font-size: 0.85rem;
   color: var(--muted);
-  font-size: 12px;
+  font-weight: 500;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .kpi-value {
-  margin-top: 8px;
-  font-size: 24px;
+  font-size: 1.75rem;
   font-weight: 700;
+  color: var(--foreground);
 }
 
 .panel {
