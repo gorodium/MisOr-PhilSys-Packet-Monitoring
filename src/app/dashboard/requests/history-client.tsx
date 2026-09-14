@@ -287,20 +287,20 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
         </div>
       </header>
 
-      <section className="kpi-grid" aria-label="Filing stats" style={{ marginBottom: "24px" }}>
-        <div className="kpi-card">
+      <section aria-label="Filing stats" style={{ display: "flex", justifyContent: "center", gap: "16px", marginBottom: "24px", flexWrap: "wrap" }}>
+        <div className="kpi-card" style={{ flex: "1 1 0", minWidth: "200px", maxWidth: "250px" }}>
           <div className="kpi-label">Filed Today</div>
           <div className="kpi-value">{filedToday}</div>
         </div>
-        <div className="kpi-card">
+        <div className="kpi-card" style={{ flex: "1 1 0", minWidth: "200px", maxWidth: "250px" }}>
           <div className="kpi-label">Filed This Week</div>
           <div className="kpi-value">{filedWeek}</div>
         </div>
-        <div className="kpi-card">
+        <div className="kpi-card" style={{ flex: "1 1 0", minWidth: "200px", maxWidth: "250px" }}>
           <div className="kpi-label">Filed This Month</div>
           <div className="kpi-value">{filedMonth}</div>
         </div>
-        <div className="kpi-card">
+        <div className="kpi-card" style={{ flex: "1 1 0", minWidth: "200px", maxWidth: "250px" }}>
           <div className="kpi-label">Filed Overall</div>
           <div className="kpi-value">{filedRequests.length}</div>
         </div>

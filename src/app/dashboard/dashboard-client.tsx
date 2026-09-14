@@ -33,41 +33,29 @@ type RemarksBadge = {
 function getRemarksBadges(packet: PacketRow): RemarksBadge[] {
   const badges: RemarksBadge[] = [];
   const tags = packet.matrixTags || [];
+  const r = (packet.latestMatrixReply || "").toLowerCase();
 
-  if (tags.includes("available_to_download"))
+  const isAvailable = tags.includes("available_to_download") || r.includes("available to download") || r.includes("available for download");
+
+  if (isAvailable) {
     badges.push({ label: "Available to Download", bg: "#dcfce7", color: "#166534" });
-  
-  if (tags.includes("for_backend_restoration") || packet.restorationCommented || packet.restorationUploaded)
-    badges.push({ label: "For Backend Restoration", bg: "#ffedd5", color: "#9a3412" });
+  } else {
+    if (tags.includes("for_backend_restoration") || packet.restorationCommented || packet.restorationUploaded || r.includes("backend restoration") || r.includes("for backend restoration")) {
+      badges.push({ label: "For Backend Restoration", bg: "#ffedd5", color: "#9a3412" });
+    }
+    if (tags.includes("still_in_process") || r.includes("still processing on the backend") || r.includes("still in process") || r.includes("awaiting") || r.includes("still processing")) {
+      badges.push({ label: "Still in Process", bg: "#dbeafe", color: "#1e40af" });
+    }
+  }
     
-  if (tags.includes("still_in_process"))
-    badges.push({ label: "Still in Process", bg: "#dbeafe", color: "#1e40af" });
-    
-  if (tags.includes("potential_duplicate"))
+  if (tags.includes("potential_duplicate") || r.includes("potential duplicate") || r.includes("duplicate match") || r.includes("identified with a potential duplicate"))
     badges.push({ label: "Potential Duplicate", bg: "#f3e8ff", color: "#6b21a8" });
     
-  if (tags.includes("biometrics_issue"))
+  if (tags.includes("biometrics_issue") || r.includes("biometrics") || r.includes("biometric"))
     badges.push({ label: "Biometrics Issue", bg: "#fef9c3", color: "#854d0e" });
     
-  if (tags.includes("authentication_failed"))
+  if (tags.includes("authentication_failed") || r.includes("individual authentication") || r.includes("authentication was unsuccessful"))
     badges.push({ label: "Authentication Failed", bg: "#ffe4e6", color: "#9f1239" });
-
-  // If no sync tags yet but the latest reply has it, fallback (for older data)
-  const r = (packet.latestMatrixReply || "").toLowerCase();
-  if (badges.length === 0 && r) {
-    if (r.includes("available to download") || r.includes("available for download"))
-      badges.push({ label: "Available to Download", bg: "#dcfce7", color: "#166534" });
-    if (r.includes("backend restoration") || r.includes("for backend restoration"))
-      badges.push({ label: "For Backend Restoration", bg: "#ffedd5", color: "#9a3412" });
-    if (r.includes("still processing on the backend") || r.includes("still in process") || r.includes("awaiting") || r.includes("still processing"))
-      badges.push({ label: "Still in Process", bg: "#dbeafe", color: "#1e40af" });
-    if (r.includes("potential duplicate") || r.includes("duplicate match") || r.includes("identified with a potential duplicate"))
-      badges.push({ label: "Potential Duplicate", bg: "#f3e8ff", color: "#6b21a8" });
-    if (r.includes("biometrics") || r.includes("biometric"))
-      badges.push({ label: "Biometrics Issue", bg: "#fef9c3", color: "#854d0e" });
-    if (r.includes("individual authentication") || r.includes("authentication was unsuccessful"))
-      badges.push({ label: "Authentication Failed", bg: "#ffe4e6", color: "#9f1239" });
-  }
 
   // Deduplicate
   return badges.filter((b, index, self) => index === self.findIndex(t => t.label === b.label));
@@ -76,17 +64,23 @@ function getRemarksBadges(packet: PacketRow): RemarksBadge[] {
 function matchesRemarksFilter(packet: PacketRow, filter: string): boolean {
   if (!filter) return true;
   
-  if (filter === "for_backend_restoration") {
-    if (packet.restorationCommented || packet.restorationUploaded) return true;
+  const r = (packet.latestMatrixReply || "").toLowerCase();
+  const tags = packet.matrixTags || [];
+  const isAvailable = tags.includes("available_to_download") || r.includes("available to download") || r.includes("available for download");
+  
+  if (filter === "available_to_download") return isAvailable;
+  if (isAvailable) {
+    if (filter === "for_backend_restoration" || filter === "still_in_process") return false;
   }
   
-  if (packet.matrixTags && packet.matrixTags.includes(filter)) return true;
+  if (filter === "for_backend_restoration") {
+    return tags.includes("for_backend_restoration") || packet.restorationCommented || packet.restorationUploaded || r.includes("backend restoration") || r.includes("for backend restoration");
+  }
+  
+  if (tags.includes(filter)) return true;
   
   // fallback for older data
-  const r = (packet.latestMatrixReply || "").toLowerCase();
   switch (filter) {
-    case "available_to_download": return r.includes("available to download") || r.includes("available for download");
-    case "for_backend_restoration": return r.includes("backend restoration") || r.includes("for backend restoration");
     case "still_in_process": return r.includes("still processing on the backend") || r.includes("still in process") || r.includes("awaiting") || r.includes("still processing");
     case "potential_duplicate": return r.includes("potential duplicate") || r.includes("duplicate match") || r.includes("identified with a potential duplicate");
     case "biometrics_issue": return r.includes("biometrics") || r.includes("biometric");

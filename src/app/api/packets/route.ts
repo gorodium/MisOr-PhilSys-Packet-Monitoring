@@ -106,8 +106,22 @@ export async function GET(request: NextRequest) {
       }),
       prisma.matrixFilingRequest.count({ where: { status: "PENDING" } }),
       prisma.matrixFilingRequest.count({ where: { status: "FILED" } }),
-      prisma.packet.count({ where: { OR: [{ matrixTags: { has: "for_backend_restoration" } }, { restorationCommented: true }, { restorationUploaded: true }, { latestMatrixReply: { contains: "backend restoration", mode: "insensitive" } }, { latestMatrixReply: { contains: "for backend restoration", mode: "insensitive" } }] } }),
-      prisma.packet.count({ where: { OR: [{ matrixTags: { has: "still_in_process" } }, { latestMatrixReply: { contains: "still processing on the backend", mode: "insensitive" } }, { latestMatrixReply: { contains: "still in process", mode: "insensitive" } }, { latestMatrixReply: { contains: "awaiting", mode: "insensitive" } }, { latestMatrixReply: { contains: "still processing", mode: "insensitive" } }] } }),
+      prisma.packet.count({ 
+        where: { 
+          AND: [
+            { OR: [{ matrixTags: { has: "for_backend_restoration" } }, { restorationCommented: true }, { restorationUploaded: true }, { latestMatrixReply: { contains: "backend restoration", mode: "insensitive" } }, { latestMatrixReply: { contains: "for backend restoration", mode: "insensitive" } }] },
+            { NOT: { OR: [{ matrixTags: { has: "available_to_download" } }, { latestMatrixReply: { contains: "available to download", mode: "insensitive" } }, { latestMatrixReply: { contains: "available for download", mode: "insensitive" } }] } }
+          ]
+        } 
+      }),
+      prisma.packet.count({ 
+        where: { 
+          AND: [
+            { OR: [{ matrixTags: { has: "still_in_process" } }, { latestMatrixReply: { contains: "still processing on the backend", mode: "insensitive" } }, { latestMatrixReply: { contains: "still in process", mode: "insensitive" } }, { latestMatrixReply: { contains: "awaiting", mode: "insensitive" } }, { latestMatrixReply: { contains: "still processing", mode: "insensitive" } }] },
+            { NOT: { OR: [{ matrixTags: { has: "available_to_download" } }, { latestMatrixReply: { contains: "available to download", mode: "insensitive" } }, { latestMatrixReply: { contains: "available for download", mode: "insensitive" } }] } }
+          ]
+        } 
+      }),
       prisma.packet.count({ where: { OR: [{ matrixTags: { has: "available_to_download" } }, { latestMatrixReply: { contains: "available to download", mode: "insensitive" } }, { latestMatrixReply: { contains: "available for download", mode: "insensitive" } }] } }),
       prisma.packet.count({ where: { OR: [{ matrixTags: { has: "potential_duplicate" } }, { latestMatrixReply: { contains: "potential duplicate", mode: "insensitive" } }, { latestMatrixReply: { contains: "duplicate match", mode: "insensitive" } }, { latestMatrixReply: { contains: "identified with a potential duplicate", mode: "insensitive" } }] } }),
       prisma.packet.count({ where: { OR: [{ matrixTags: { has: "biometrics_issue" } }, { latestMatrixReply: { contains: "biometrics", mode: "insensitive" } }, { latestMatrixReply: { contains: "biometric", mode: "insensitive" } }] } }),

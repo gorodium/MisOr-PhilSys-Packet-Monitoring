@@ -70,13 +70,43 @@ function StepLog({ steps }: { steps: StepLine[] }) {
 // Main component
 // ──────────────────────────────────────────────
 
+// --- Global Store ---
+const globalJobs = new Map<string, JobState>();
+let globalIsRecoveringAll = false;
+let globalIsPostingAll = false;
+const globalListeners = new Set<() => void>();
+
+function notifyGlobalListeners() {
+  globalListeners.forEach((l) => l());
+}
+
+function updateGlobalJobs(key: string, state: JobState) {
+  globalJobs.set(key, state);
+  notifyGlobalListeners();
+}
+// --------------------
+
 export function AutomationClient() {
   const [restorePackets, setRestorePackets] = useState<RestorePacket[]>([]);
   const [listLoading, setListLoading] = useState(false);
-  const [jobs, setJobs] = useState<Map<string, JobState>>(new Map());
+  const [jobs, setJobs] = useState<Map<string, JobState>>(globalJobs);
+  const [isRecoveringAll, setIsRecoveringAll] = useState(globalIsRecoveringAll);
+  const [isPostingAll, setIsPostingAll] = useState(globalIsPostingAll);
   const [commentingFor, setCommentingFor] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<"pending" | "completed">("pending");
   const [confirmDialog, setConfirmDialog] = useState<{ title: string; message: string; onConfirm: () => void; onCancel: () => void } | null>(null);
+
+  useEffect(() => {
+    const listener = () => {
+      setJobs(new Map(globalJobs));
+      setIsRecoveringAll(globalIsRecoveringAll);
+      setIsPostingAll(globalIsPostingAll);
+    };
+    globalListeners.add(listener);
+    return () => {
+      globalListeners.delete(listener);
+    };
+  }, []);
 
   const loadRestorePackets = useCallback(async () => {
     setListLoading(true);
@@ -116,13 +146,10 @@ export function AutomationClient() {
       });
 
       setRestorePackets(packets);
-      setJobs(prev => {
-        const merged = new Map(prev);
-        for (const [k, v] of newJobs) {
-          if (!merged.has(k)) merged.set(k, v);
-        }
-        return merged;
-      });
+      for (const [k, v] of newJobs) {
+        if (!globalJobs.has(k)) globalJobs.set(k, v);
+      }
+      notifyGlobalListeners();
     } catch {
       // ignore
     } finally {
@@ -133,7 +160,7 @@ export function AutomationClient() {
   useEffect(() => { void loadRestorePackets(); }, [loadRestorePackets]);
 
   // ── Recover all pending packets sequentially ──
-  const [isRecoveringAll, setIsRecoveringAll] = useState(false);
+  
   async function recoverAllPendingPackets() {
     if (isRecoveringAll) return;
     const pendingToRecover = restorePackets.filter(p => {
@@ -151,17 +178,19 @@ export function AutomationClient() {
       message: `Are you sure you want to recover ${pendingToRecover.length} packets sequentially? This may take some time.`,
       onConfirm: async () => {
         setConfirmDialog(null);
-        setIsRecoveringAll(true);
+        globalIsRecoveringAll = true;
+        notifyGlobalListeners();
         for (const packet of pendingToRecover) {
           // Check if it's still idle (maybe user manually clicked it)
-          const currentJob = jobs.get(packet.id);
+          const currentJob = globalJobs.get(packet.id);
           if (!currentJob || currentJob.phase === "idle") {
             await runRestore(packet);
             // Small delay
             await new Promise(r => setTimeout(r, 1000));
           }
         }
-        setIsRecoveringAll(false);
+        globalIsRecoveringAll = false;
+        notifyGlobalListeners();
       },
       onCancel: () => setConfirmDialog(null)
     });
@@ -172,7 +201,7 @@ export function AutomationClient() {
     if (!packet.ticketId || !packet.ticketNumber) return;
     const key = packet.id;
 
-    setJobs(prev => new Map(prev).set(key, { phase: "searching" }));
+    updateGlobalJobs(key, { phase: "searching" });
 
     try {
       const res = await fetch("/api/restore", {
@@ -248,11 +277,10 @@ export function AutomationClient() {
         throw new Error(errMsg);
       }
 
-      setJobs(prev => {
-        const existing = prev.get(key);
-        if (existing?.phase !== "success") return prev;
-        return new Map(prev).set(key, { ...existing, commentPosted: true });
-      });
+      const existing = globalJobs.get(key);
+      if (existing?.phase === "success") {
+        updateGlobalJobs(key, { ...existing, commentPosted: true });
+      }
     } catch (err: any) {
       alert(`Failed to post comment: ${err?.message}`);
     } finally {
@@ -261,7 +289,7 @@ export function AutomationClient() {
   }
 
   // ── Post all pending comments sequentially ──
-  const [isPostingAll, setIsPostingAll] = useState(false);
+  
   async function postAllPendingComments() {
     if (isPostingAll) return;
     const pendingPackets = restorePackets.filter(p => {
@@ -279,16 +307,18 @@ export function AutomationClient() {
       message: `Are you sure you want to post ${pendingPackets.length} comments sequentially?`,
       onConfirm: async () => {
         setConfirmDialog(null);
-        setIsPostingAll(true);
+        globalIsPostingAll = true;
+        notifyGlobalListeners();
         for (const packet of pendingPackets) {
-          const job = jobs.get(packet.id);
+          const job = globalJobs.get(packet.id);
           if (job) {
             await postComment(packet, job);
             // Small delay to prevent rate-limiting
             await new Promise(r => setTimeout(r, 800));
           }
         }
-        setIsPostingAll(false);
+        globalIsPostingAll = false;
+        notifyGlobalListeners();
       },
       onCancel: () => setConfirmDialog(null)
     });
@@ -296,11 +326,8 @@ export function AutomationClient() {
 
   // ── Reset job for a packet ──
   function resetJob(key: string) {
-    setJobs(prev => {
-      const m = new Map(prev);
-      m.delete(key);
-      return m;
-    });
+    globalJobs.delete(key);
+    notifyGlobalListeners();
   }
 
   const completedPacketsCount = restorePackets.filter(p => {
