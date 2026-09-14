@@ -11,6 +11,7 @@ type FilingRequest = {
   status: string;
   matrixTicketId: string | null;
   createdAt: string;
+  updatedAt: string;
 };
 
 function getNextWorkday(date: Date) {
@@ -264,7 +265,7 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
   let filedMonth = 0;
 
   filedRequests.forEach(req => {
-    const d = new Date(req.createdAt);
+    const d = new Date(req.updatedAt);
     if (d >= today) filedToday++;
     if (d >= startOfWeek) filedWeek++;
     if (d >= startOfMonth) filedMonth++;
@@ -272,8 +273,8 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
 
   const displayRequests = activeTab === "pending" ? pendingRequests : filedRequests;
   const sortedDisplayRequests = [...displayRequests].sort((a, b) => {
-    const dateA = new Date(a.createdAt).getTime();
-    const dateB = new Date(b.createdAt).getTime();
+    const dateA = new Date(activeTab === "filed" ? a.updatedAt : a.createdAt).getTime();
+    const dateB = new Date(activeTab === "filed" ? b.updatedAt : b.createdAt).getTime();
     return sortOrder === "desc" ? dateB - dateA : dateA - dateB;
   });
 
@@ -360,9 +361,11 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
               </tr>
             </thead>
             <tbody>
-              {sortedDisplayRequests.map(req => (
+              {sortedDisplayRequests.map(req => {
+                const displayDate = new Date(activeTab === "filed" ? req.updatedAt : req.createdAt);
+                return (
                 <tr key={req.id} style={{ borderBottom: "1px solid var(--border)", fontSize: "0.9rem" }}>
-                  <td style={{ verticalAlign: "middle" }}>{new Date(req.createdAt).toLocaleDateString()} {new Date(req.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
+                  <td style={{ verticalAlign: "middle" }}>{displayDate.toLocaleDateString()} {displayDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
                   <td style={{ fontFamily: "monospace", verticalAlign: "middle" }}>{req.trn}</td>
                   <td style={{ verticalAlign: "middle" }}>
                     <span style={{ 
@@ -420,7 +423,8 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
                     </td>
                   )}
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         )}
