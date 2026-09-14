@@ -224,6 +224,34 @@ export function AutomationClient() {
     }
   }
 
+  // ── Post all pending comments sequentially ──
+  const [isPostingAll, setIsPostingAll] = useState(false);
+  async function postAllPendingComments() {
+    if (isPostingAll) return;
+    const pendingPackets = restorePackets.filter(p => {
+      const job = jobs.get(p.id);
+      return job?.phase === "success" && !job.commentPosted;
+    });
+
+    if (pendingPackets.length === 0) {
+      alert("No pending comments to post.");
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to post ${pendingPackets.length} comments sequentially?`)) return;
+
+    setIsPostingAll(true);
+    for (const packet of pendingPackets) {
+      const job = jobs.get(packet.id);
+      if (job) {
+        await postComment(packet, job);
+        // Small delay to prevent rate-limiting
+        await new Promise(r => setTimeout(r, 800));
+      }
+    }
+    setIsPostingAll(false);
+  }
+
   // ── Reset job for a packet ──
   function resetJob(key: string) {
     setJobs(prev => {
@@ -252,10 +280,16 @@ export function AutomationClient() {
             <HardDriveDownload size={18} style={{ marginRight: 8 }} />
             Backend Restoration Packets
           </h2>
-          <button className="btn" onClick={loadRestorePackets} disabled={listLoading}>
-            <RefreshCw size={16} />
-            Refresh
-          </button>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button className="btn btn-primary" onClick={postAllPendingComments} disabled={isPostingAll || listLoading}>
+              {isPostingAll ? <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> : <MessageSquare size={16} />}
+              {isPostingAll ? "Posting..." : "Post All Comments"}
+            </button>
+            <button className="btn" onClick={loadRestorePackets} disabled={listLoading || isPostingAll}>
+              <RefreshCw size={16} />
+              Refresh
+            </button>
+          </div>
         </div>
 
         <div style={{ display: "flex", gap: 16, padding: "0 16px", borderBottom: "1px solid var(--border)", marginBottom: 16 }}>
@@ -437,7 +471,7 @@ export function AutomationClient() {
                                 <button
                                   className="btn"
                                   style={{ fontSize: "0.78rem", padding: "4px 10px" }}
-                                  disabled={isCommenting}
+                                  disabled={isCommenting || isPostingAll}
                                   onClick={() => postComment(packet, job)}
                                 >
                                   {isCommenting

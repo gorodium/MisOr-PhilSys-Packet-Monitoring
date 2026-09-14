@@ -7,6 +7,29 @@ export const dynamic = "force-dynamic";
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
+let cachedMyId: number | null = null;
+let lastCacheTime = 0;
+
+async function getMyIdCached(baseUrl: string, apiKey: string) {
+  if (cachedMyId && Date.now() - lastCacheTime < 1000 * 60 * 60) {
+    return cachedMyId;
+  }
+  try {
+    const res = await fetch(`${baseUrl}/users/current.json`, {
+      headers: { "X-Redmine-API-Key": apiKey, "Accept": "application/json" },
+      cache: "no-store",
+    });
+    if (res.ok) {
+      const data = await res.json();
+      cachedMyId = data.user?.id || null;
+      lastCacheTime = Date.now();
+    }
+  } catch (e) {
+    // ignore
+  }
+  return cachedMyId;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -47,19 +70,7 @@ export async function POST(req: NextRequest) {
     const baseUrl = matrixBaseUrl.replace(/\/$/, "");
 
     // 1. Get current user ID
-    let myId: number | null = null;
-    try {
-      const meRes = await fetch(`${baseUrl}/users/current.json`, {
-        headers: { "X-Redmine-API-Key": matrixApiKey, "Accept": "application/json" },
-        cache: "no-store"
-      });
-      if (meRes.ok) {
-        const meData = await meRes.json();
-        myId = meData.user?.id;
-      }
-    } catch (e) {
-      // ignore
-    }
+    const myId = await getMyIdCached(baseUrl, matrixApiKey);
 
     // 2. Fetch issue to find the correct assignee
     let targetAssigneeId: number | undefined;
