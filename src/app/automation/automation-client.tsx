@@ -76,6 +76,7 @@ export function AutomationClient() {
   const [jobs, setJobs] = useState<Map<string, JobState>>(new Map());
   const [commentingFor, setCommentingFor] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<"pending" | "completed">("pending");
+  const [confirmDialog, setConfirmDialog] = useState<{ title: string; message: string; onConfirm: () => void; onCancel: () => void } | null>(null);
 
   const loadRestorePackets = useCallback(async () => {
     setListLoading(true);
@@ -145,19 +146,25 @@ export function AutomationClient() {
       return;
     }
 
-    if (!confirm(`Are you sure you want to recover ${pendingToRecover.length} packets sequentially? This may take some time.`)) return;
-
-    setIsRecoveringAll(true);
-    for (const packet of pendingToRecover) {
-      // Check if it's still idle (maybe user manually clicked it)
-      const currentJob = jobs.get(packet.id);
-      if (!currentJob || currentJob.phase === "idle") {
-        await runRestore(packet);
-        // Small delay
-        await new Promise(r => setTimeout(r, 1000));
-      }
-    }
-    setIsRecoveringAll(false);
+    setConfirmDialog({
+      title: "Confirm Recovery",
+      message: `Are you sure you want to recover ${pendingToRecover.length} packets sequentially? This may take some time.`,
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        setIsRecoveringAll(true);
+        for (const packet of pendingToRecover) {
+          // Check if it's still idle (maybe user manually clicked it)
+          const currentJob = jobs.get(packet.id);
+          if (!currentJob || currentJob.phase === "idle") {
+            await runRestore(packet);
+            // Small delay
+            await new Promise(r => setTimeout(r, 1000));
+          }
+        }
+        setIsRecoveringAll(false);
+      },
+      onCancel: () => setConfirmDialog(null)
+    });
   }
 
   // ── Recover (search + copy) ──
@@ -267,18 +274,24 @@ export function AutomationClient() {
       return;
     }
 
-    if (!confirm(`Are you sure you want to post ${pendingPackets.length} comments sequentially?`)) return;
-
-    setIsPostingAll(true);
-    for (const packet of pendingPackets) {
-      const job = jobs.get(packet.id);
-      if (job) {
-        await postComment(packet, job);
-        // Small delay to prevent rate-limiting
-        await new Promise(r => setTimeout(r, 800));
-      }
-    }
-    setIsPostingAll(false);
+    setConfirmDialog({
+      title: "Confirm Post All",
+      message: `Are you sure you want to post ${pendingPackets.length} comments sequentially?`,
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        setIsPostingAll(true);
+        for (const packet of pendingPackets) {
+          const job = jobs.get(packet.id);
+          if (job) {
+            await postComment(packet, job);
+            // Small delay to prevent rate-limiting
+            await new Promise(r => setTimeout(r, 800));
+          }
+        }
+        setIsPostingAll(false);
+      },
+      onCancel: () => setConfirmDialog(null)
+    });
   }
 
   // ── Reset job for a packet ──
@@ -589,7 +602,36 @@ export function AutomationClient() {
           return null;
         })()}
 
-        <style dangerouslySetInnerHTML={{ __html: `@keyframes spin { 100% { transform: rotate(360deg); } }` }} />
+        {confirmDialog && (
+          <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px", animation: "fadeIn 0.2s ease-out" }}>
+            <div style={{ background: "var(--surface)", borderRadius: "12px", width: "100%", maxWidth: "420px", padding: "24px", display: "flex", flexDirection: "column", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.2), 0 10px 10px -5px rgba(0,0,0,0.1)", border: "1px solid var(--border)", animation: "slideUp 0.2s ease-out" }}>
+              <h2 style={{ fontSize: "1.2rem", fontWeight: 600, margin: "0 0 12px 0", color: "var(--foreground)" }}>{confirmDialog.title}</h2>
+              <p style={{ margin: "0 0 24px 0", color: "var(--muted)", fontSize: "0.95rem", lineHeight: 1.5 }}>
+                {confirmDialog.message}
+              </p>
+              <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+                <button 
+                  className="btn"
+                  onClick={confirmDialog.onCancel}
+                >
+                  Cancel
+                </button>
+                <button 
+                  className="btn btn-primary"
+                  onClick={confirmDialog.onConfirm}
+                >
+                  Confirm
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <style dangerouslySetInnerHTML={{ __html: `
+          @keyframes spin { 100% { transform: rotate(360deg); } }
+          @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+          @keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        ` }} />
       </section>
     </>
   );
