@@ -131,6 +131,35 @@ export function AutomationClient() {
 
   useEffect(() => { void loadRestorePackets(); }, [loadRestorePackets]);
 
+  // ── Recover all pending packets sequentially ──
+  const [isRecoveringAll, setIsRecoveringAll] = useState(false);
+  async function recoverAllPendingPackets() {
+    if (isRecoveringAll) return;
+    const pendingToRecover = restorePackets.filter(p => {
+      const job = jobs.get(p.id);
+      return !job || job.phase === "idle";
+    });
+
+    if (pendingToRecover.length === 0) {
+      alert("No pending packets to recover in this tab.");
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to recover ${pendingToRecover.length} packets sequentially? This may take some time.`)) return;
+
+    setIsRecoveringAll(true);
+    for (const packet of pendingToRecover) {
+      // Check if it's still idle (maybe user manually clicked it)
+      const currentJob = jobs.get(packet.id);
+      if (!currentJob || currentJob.phase === "idle") {
+        await runRestore(packet);
+        // Small delay
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+    setIsRecoveringAll(false);
+  }
+
   // ── Recover (search + copy) ──
   async function runRestore(packet: RestorePacket) {
     if (!packet.ticketId || !packet.ticketNumber) return;
@@ -281,11 +310,15 @@ export function AutomationClient() {
             Backend Restoration Packets
           </h2>
           <div style={{ display: "flex", gap: 10 }}>
+            <button className="btn btn-primary" onClick={recoverAllPendingPackets} disabled={isRecoveringAll || listLoading}>
+              {isRecoveringAll ? <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> : <HardDriveDownload size={16} />}
+              {isRecoveringAll ? "Recovering..." : "Recover All"}
+            </button>
             <button className="btn btn-primary" onClick={postAllPendingComments} disabled={isPostingAll || listLoading}>
               {isPostingAll ? <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> : <MessageSquare size={16} />}
               {isPostingAll ? "Posting..." : "Post All Comments"}
             </button>
-            <button className="btn" onClick={loadRestorePackets} disabled={listLoading || isPostingAll}>
+            <button className="btn" onClick={loadRestorePackets} disabled={listLoading || isPostingAll || isRecoveringAll}>
               <RefreshCw size={16} />
               Refresh
             </button>
@@ -448,6 +481,7 @@ export function AutomationClient() {
                             <button
                               className="btn btn-primary"
                               style={{ fontSize: "0.8rem", padding: "5px 14px" }}
+                              disabled={isRecoveringAll}
                               onClick={() => runRestore(packet)}
                             >
                               <HardDriveDownload size={14} />
