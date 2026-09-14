@@ -75,6 +75,7 @@ export function AutomationClient() {
   const [listLoading, setListLoading] = useState(false);
   const [jobs, setJobs] = useState<Map<string, JobState>>(new Map());
   const [commentingFor, setCommentingFor] = useState<Set<string>>(new Set());
+  const [activeTab, setActiveTab] = useState<"pending" | "completed">("pending");
 
   const loadRestorePackets = useCallback(async () => {
     setListLoading(true);
@@ -257,6 +258,37 @@ export function AutomationClient() {
           </button>
         </div>
 
+        <div style={{ display: "flex", gap: 16, padding: "0 16px", borderBottom: "1px solid var(--border)", marginBottom: 16 }}>
+          <button 
+            onClick={() => setActiveTab("pending")}
+            style={{ 
+              padding: "8px 12px", 
+              background: "none", 
+              border: "none", 
+              borderBottom: activeTab === "pending" ? "2px solid var(--primary)" : "2px solid transparent",
+              color: activeTab === "pending" ? "var(--primary-dark)" : "var(--muted)",
+              fontWeight: activeTab === "pending" ? 600 : 400,
+              cursor: "pointer"
+            }}
+          >
+            Pending
+          </button>
+          <button 
+            onClick={() => setActiveTab("completed")}
+            style={{ 
+              padding: "8px 12px", 
+              background: "none", 
+              border: "none", 
+              borderBottom: activeTab === "completed" ? "2px solid var(--primary)" : "2px solid transparent",
+              color: activeTab === "completed" ? "var(--primary-dark)" : "var(--muted)",
+              fontWeight: activeTab === "completed" ? 600 : 400,
+              cursor: "pointer"
+            }}
+          >
+            Completed
+          </button>
+        </div>
+
         {listLoading && (
           <div style={{ padding: "20px 16px", display: "flex", alignItems: "center", gap: 8, color: "var(--muted)" }}>
             <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />
@@ -264,25 +296,41 @@ export function AutomationClient() {
           </div>
         )}
 
-        {!listLoading && restorePackets.length === 0 && (
-          <div style={{ padding: "20px 16px", color: "var(--muted)" }}>
+        {!listLoading && (
+          <div style={{ padding: "20px 16px", color: "var(--muted)", display: "none" }}>
             No backend restoration packets with matched tickets found.
           </div>
         )}
 
-        {restorePackets.length > 0 && (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th style={{ minWidth: 280 }}>TRN</th>
-                  <th>Matched Ticket</th>
-                  <th>Latest Reply</th>
-                  <th style={{ textAlign: "right", minWidth: 140 }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {restorePackets.map(packet => {
+        {(() => {
+          const displayPackets = restorePackets.filter(p => {
+            const job = jobs.get(p.id);
+            const isCompleted = job?.phase === "success" && job.commentPosted === true;
+            return activeTab === "completed" ? isCompleted : !isCompleted;
+          });
+
+          if (!listLoading && displayPackets.length === 0) {
+            return (
+              <div style={{ padding: "20px 16px", color: "var(--muted)" }}>
+                No backend restoration packets found in this tab.
+              </div>
+            );
+          }
+
+          if (displayPackets.length > 0) {
+            return (
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th style={{ minWidth: 280 }}>TRN</th>
+                      <th>Matched Ticket</th>
+                      <th>Latest Reply</th>
+                      <th style={{ textAlign: "right", minWidth: 140 }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {displayPackets.map(packet => {
                   const job = jobs.get(packet.id) ?? { phase: "idle" };
                   const isCommenting = commentingFor.has(packet.id);
 
@@ -416,7 +464,7 @@ export function AutomationClient() {
                           {job.phase === "error" && (
                             <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", alignItems: "center" }}>
                               <span style={{ color: "var(--danger)", fontSize: "0.82rem", display: "flex", alignItems: "center", gap: 4 }}>
-                                <XCircle size={14} /> Failed
+                                <XCircle size={14} /> {job.error?.includes("Packet not found") ? "Packet Not Found" : "Failed"}
                               </span>
                               <button
                                 className="btn"
@@ -468,7 +516,10 @@ export function AutomationClient() {
               </tbody>
             </table>
           </div>
-        )}
+            );
+          }
+          return null;
+        })()}
 
         <style dangerouslySetInnerHTML={{ __html: `@keyframes spin { 100% { transform: rotate(360deg); } }` }} />
       </section>
