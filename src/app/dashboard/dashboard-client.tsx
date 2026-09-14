@@ -135,6 +135,12 @@ type PacketResponse = {
     errors: number;
     pendingFilingRequests?: number;
     totalTicketsFiled?: number;
+    forBackendRestoration?: number;
+    stillInProcess?: number;
+    availableToDownload?: number;
+    potentialDuplicate?: number;
+    biometricsIssue?: number;
+    authenticationFailed?: number;
   };
   lastSyncedAt: string | null;
 };
@@ -142,7 +148,7 @@ type PacketResponse = {
 const emptyResponse: PacketResponse = {
   packets: [],
   pagination: { page: 1, pageSize: PAGE_SIZE, total: 0, totalPages: 1 },
-  counts: { total: 0, filed: 0, notFiled: 0, needsReview: 0, withLatestReply: 0, errors: 0, pendingFilingRequests: 0, totalTicketsFiled: 0 },
+  counts: { total: 0, filed: 0, notFiled: 0, needsReview: 0, withLatestReply: 0, errors: 0, pendingFilingRequests: 0, totalTicketsFiled: 0, forBackendRestoration: 0, stillInProcess: 0, availableToDownload: 0, potentialDuplicate: 0, biometricsIssue: 0, authenticationFailed: 0 },
   lastSyncedAt: null
 };
 
@@ -256,12 +262,21 @@ export function DashboardClient({ isAdmin = false }: { isAdmin?: boolean }) {
   const rowStart = pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.pageSize + 1;
   const rowEnd = Math.min(pagination.page * pagination.pageSize, pagination.total);
 
-  const kpis = [
+  const mainKpis = [
     ["Total Packets", counts.total],
     ["Filed in Ticket", counts.filed],
     ["With Latest Reply", counts.withLatestReply],
     ["Pending Filing", counts.pendingFilingRequests ?? 0],
     ["Total Filed", counts.totalTicketsFiled ?? 0]
+  ];
+
+  const tagKpis = [
+    ["For Backend Restoration", counts.forBackendRestoration ?? 0],
+    ["Still in Process", counts.stillInProcess ?? 0],
+    ["Available to Download", counts.availableToDownload ?? 0],
+    ["Potential Duplicate", counts.potentialDuplicate ?? 0],
+    ["Biometrics Issue", counts.biometricsIssue ?? 0],
+    ["Authentication Failed", counts.authenticationFailed ?? 0]
   ];
 
   return (
@@ -279,14 +294,25 @@ export function DashboardClient({ isAdmin = false }: { isAdmin?: boolean }) {
         )}
       </header>
 
-      <section className="kpi-grid" aria-label="Packet counts">
-        {kpis.map(([label, value]) => (
+      <section className="kpi-grid" aria-label="Packet counts" style={{ marginBottom: "20px" }}>
+        {mainKpis.map(([label, value]) => (
           <div className="kpi-card" key={label}>
             <div className="kpi-label">{label}</div>
             <div className="kpi-value">{value}</div>
           </div>
         ))}
       </section>
+
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: "24px" }}>
+        <section className="kpi-grid" aria-label="Tag counts" style={{ margin: 0, justifyContent: "center", flex: 1, maxWidth: "1000px" }}>
+          {tagKpis.map(([label, value]) => (
+            <div className="kpi-card" key={label} style={{ background: "var(--surface-hover)", borderStyle: "dashed" }}>
+              <div className="kpi-label">{label}</div>
+              <div className="kpi-value">{value}</div>
+            </div>
+          ))}
+        </section>
+      </div>
 
       <div className="toolbar" style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
         <input

@@ -79,7 +79,13 @@ export async function GET(request: NextRequest) {
       withLatestReply,
       latestSync,
       pendingFilingRequests,
-      totalTicketsFiled
+      totalTicketsFiled,
+      cForBackendRestoration,
+      cStillInProcess,
+      cAvailableToDownload,
+      cPotentialDuplicate,
+      cBiometricsIssue,
+      cAuthenticationFailed
     ] = await Promise.all([
       prisma.packet.findMany({
         where,
@@ -99,7 +105,13 @@ export async function GET(request: NextRequest) {
         orderBy: { finishedAt: "desc" }
       }),
       prisma.matrixFilingRequest.count({ where: { status: "PENDING" } }),
-      prisma.matrixFilingRequest.count({ where: { status: "FILED" } })
+      prisma.matrixFilingRequest.count({ where: { status: "FILED" } }),
+      prisma.packet.count({ where: { matrixTags: { has: "for_backend_restoration" } } }),
+      prisma.packet.count({ where: { matrixTags: { has: "still_in_process" } } }),
+      prisma.packet.count({ where: { matrixTags: { has: "available_to_download" } } }),
+      prisma.packet.count({ where: { matrixTags: { has: "potential_duplicate" } } }),
+      prisma.packet.count({ where: { matrixTags: { has: "biometrics_issue" } } }),
+      prisma.packet.count({ where: { matrixTags: { has: "authentication_failed" } } })
     ]);
 
     const totalPages = Math.max(1, Math.ceil(filteredTotal / query.pageSize));
@@ -125,7 +137,13 @@ export async function GET(request: NextRequest) {
         withLatestReply,
         errors,
         pendingFilingRequests,
-        totalTicketsFiled
+        totalTicketsFiled,
+        forBackendRestoration: cForBackendRestoration,
+        stillInProcess: cStillInProcess,
+        availableToDownload: cAvailableToDownload,
+        potentialDuplicate: cPotentialDuplicate,
+        biometricsIssue: cBiometricsIssue,
+        authenticationFailed: cAuthenticationFailed
       },
       lastSyncedAt: latestSync?.finishedAt ?? null
     });
