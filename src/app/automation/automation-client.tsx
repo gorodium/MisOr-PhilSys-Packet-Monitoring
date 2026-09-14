@@ -303,6 +303,23 @@ export function AutomationClient() {
     });
   }
 
+  const completedPacketsCount = restorePackets.filter(p => {
+    const job = jobs.get(p.id);
+    return job?.phase === "success" && job.commentPosted === true;
+  }).length;
+  
+  const pendingPacketsCount = restorePackets.length - completedPacketsCount;
+
+  const pendingToRecoverCount = restorePackets.filter(p => {
+    const job = jobs.get(p.id);
+    return !job || job.phase === "idle";
+  }).length;
+  
+  const pendingToPostCount = restorePackets.filter(p => {
+    const job = jobs.get(p.id);
+    return job?.phase === "success" && !job.commentPosted;
+  }).length;
+
   // ──────────────────────────────────────────────
   // Render
   // ──────────────────────────────────────────────
@@ -323,11 +340,11 @@ export function AutomationClient() {
             Backend Restoration Packets
           </h2>
           <div style={{ display: "flex", gap: 10 }}>
-            <button className="btn btn-primary" onClick={recoverAllPendingPackets} disabled={isRecoveringAll || listLoading}>
+            <button className="btn btn-primary" onClick={recoverAllPendingPackets} disabled={isRecoveringAll || listLoading || pendingToRecoverCount === 0}>
               {isRecoveringAll ? <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> : <HardDriveDownload size={16} />}
               {isRecoveringAll ? "Recovering..." : "Recover All"}
             </button>
-            <button className="btn btn-primary" onClick={postAllPendingComments} disabled={isPostingAll || listLoading}>
+            <button className="btn btn-primary" onClick={postAllPendingComments} disabled={isPostingAll || listLoading || pendingToPostCount === 0}>
               {isPostingAll ? <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> : <MessageSquare size={16} />}
               {isPostingAll ? "Posting..." : "Post All Comments"}
             </button>
@@ -348,10 +365,14 @@ export function AutomationClient() {
               borderBottom: activeTab === "pending" ? "2px solid var(--primary)" : "2px solid transparent",
               color: activeTab === "pending" ? "var(--primary-dark)" : "var(--muted)",
               fontWeight: activeTab === "pending" ? 600 : 400,
-              cursor: "pointer"
+              cursor: "pointer",
+              display: "flex",
+              gap: 8,
+              alignItems: "center"
             }}
           >
             Pending
+            <span style={{ background: activeTab === "pending" ? "var(--primary-light)" : "var(--border)", color: activeTab === "pending" ? "var(--primary-dark)" : "var(--muted)", padding: "2px 8px", borderRadius: 12, fontSize: "0.75rem", fontWeight: 600 }}>{pendingPacketsCount}</span>
           </button>
           <button 
             onClick={() => setActiveTab("completed")}
@@ -362,10 +383,14 @@ export function AutomationClient() {
               borderBottom: activeTab === "completed" ? "2px solid var(--primary)" : "2px solid transparent",
               color: activeTab === "completed" ? "var(--primary-dark)" : "var(--muted)",
               fontWeight: activeTab === "completed" ? 600 : 400,
-              cursor: "pointer"
+              cursor: "pointer",
+              display: "flex",
+              gap: 8,
+              alignItems: "center"
             }}
           >
             Completed
+            <span style={{ background: activeTab === "completed" ? "var(--primary-light)" : "var(--border)", color: activeTab === "completed" ? "var(--primary-dark)" : "var(--muted)", padding: "2px 8px", borderRadius: 12, fontSize: "0.75rem", fontWeight: 600 }}>{completedPacketsCount}</span>
           </button>
         </div>
 
