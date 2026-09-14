@@ -106,12 +106,12 @@ export async function GET(request: NextRequest) {
       }),
       prisma.matrixFilingRequest.count({ where: { status: "PENDING" } }),
       prisma.matrixFilingRequest.count({ where: { status: "FILED" } }),
-      prisma.packet.count({ where: { matrixTags: { has: "for_backend_restoration" } } }),
-      prisma.packet.count({ where: { matrixTags: { has: "still_in_process" } } }),
-      prisma.packet.count({ where: { matrixTags: { has: "available_to_download" } } }),
-      prisma.packet.count({ where: { matrixTags: { has: "potential_duplicate" } } }),
-      prisma.packet.count({ where: { matrixTags: { has: "biometrics_issue" } } }),
-      prisma.packet.count({ where: { matrixTags: { has: "authentication_failed" } } })
+      prisma.packet.count({ where: { OR: [{ matrixTags: { has: "for_backend_restoration" } }, { restorationCommented: true }, { restorationUploaded: true }, { latestMatrixReply: { contains: "backend restoration", mode: "insensitive" } }, { latestMatrixReply: { contains: "for backend restoration", mode: "insensitive" } }] } }),
+      prisma.packet.count({ where: { OR: [{ matrixTags: { has: "still_in_process" } }, { latestMatrixReply: { contains: "still processing on the backend", mode: "insensitive" } }, { latestMatrixReply: { contains: "still in process", mode: "insensitive" } }, { latestMatrixReply: { contains: "awaiting", mode: "insensitive" } }, { latestMatrixReply: { contains: "still processing", mode: "insensitive" } }] } }),
+      prisma.packet.count({ where: { OR: [{ matrixTags: { has: "available_to_download" } }, { latestMatrixReply: { contains: "available to download", mode: "insensitive" } }, { latestMatrixReply: { contains: "available for download", mode: "insensitive" } }] } }),
+      prisma.packet.count({ where: { OR: [{ matrixTags: { has: "potential_duplicate" } }, { latestMatrixReply: { contains: "potential duplicate", mode: "insensitive" } }, { latestMatrixReply: { contains: "duplicate match", mode: "insensitive" } }, { latestMatrixReply: { contains: "identified with a potential duplicate", mode: "insensitive" } }] } }),
+      prisma.packet.count({ where: { OR: [{ matrixTags: { has: "biometrics_issue" } }, { latestMatrixReply: { contains: "biometrics", mode: "insensitive" } }, { latestMatrixReply: { contains: "biometric", mode: "insensitive" } }] } }),
+      prisma.packet.count({ where: { OR: [{ matrixTags: { has: "authentication_failed" } }, { latestMatrixReply: { contains: "individual authentication", mode: "insensitive" } }, { latestMatrixReply: { contains: "authentication was unsuccessful", mode: "insensitive" } }] } })
     ]);
 
     const totalPages = Math.max(1, Math.ceil(filteredTotal / query.pageSize));

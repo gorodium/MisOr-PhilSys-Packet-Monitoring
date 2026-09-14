@@ -223,24 +223,31 @@ export async function syncMatrixMatches(input: { packetIds?: string[]; writeBack
   const results: Array<{ packetId: string; status: PacketSyncStatus; ticketCount: number }> = [];
   const errors: Array<{ packetId: string; message: string }> = [];
 
-  for (const packet of packets) {
-    try {
-      const matches = await findMatchesForPacket(packet);
-      results.push({
-        packetId: packet.id,
-        ...(await applyPacketMatches(packet, matches))
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Matrix matching failed.";
-      errors.push({ packetId: packet.id, message });
-      await prisma.packet.update({
-        where: { id: packet.id },
-        data: {
-          syncStatus: PacketSyncStatus.ERROR,
-          lastCheckedAt: new Date()
+  const chunkSize = 50;
+  for (let i = 0; i < packets.length; i += chunkSize) {
+    const chunk = packets.slice(i, i + chunkSize);
+    await Promise.all(
+      chunk.map(async (packet) => {
+        try {
+          const matches = await findMatchesForPacket(packet);
+          const applyResult = await applyPacketMatches(packet, matches);
+          results.push({
+            packetId: packet.id,
+            ...applyResult
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Matrix matching failed.";
+          errors.push({ packetId: packet.id, message });
+          await prisma.packet.update({
+            where: { id: packet.id },
+            data: {
+              syncStatus: PacketSyncStatus.ERROR,
+              lastCheckedAt: new Date()
+            }
+          });
         }
-      });
-    }
+      })
+    );
   }
 
   const status = errors.length === 0 ? RunStatus.SUCCESS : results.length > 0 ? RunStatus.PARTIAL : RunStatus.ERROR;
@@ -280,36 +287,42 @@ export async function runFullSync() {
   try {
     const adapter = await createMatrixAdapter();
     const allTickets = await adapter.fetchTickets();
-    const results = [];
-    const errors = [];
+    const results: Array<{ ticketId: string }> = [];
+    const errors: Array<{ ticketId: string; message: string }> = [];
 
     // Clear matches to recreate them
     await prisma.ticketPacketMatch.deleteMany();
 
-    for (const ticket of allTickets) {
-      try {
-        const detailedTicket = (await adapter.fetchTicketDetails(ticket.matrixTicketId)) ?? ticket;
-        const dbTicket = await upsertMatrixTicket(detailedTicket);
+    const chunkSize = 15;
+    for (let i = 0; i < allTickets.length; i += chunkSize) {
+      const chunk = allTickets.slice(i, i + chunkSize);
+      await Promise.all(
+        chunk.map(async (ticket) => {
+          try {
+            const detailedTicket = (await adapter.fetchTicketDetails(ticket.matrixTicketId)) ?? ticket;
+            const dbTicket = await upsertMatrixTicket(detailedTicket);
 
-        // 1. Extract packets from the main ticket text
-        const titleBodyCodes = adapter.extractPacketCodesFromTicket(detailedTicket);
-        for (const code of titleBodyCodes) {
-          await upsertPacketFromMatrix(code, dbTicket, detailedTicket, null, MatchType.BODY);
-        }
+            // 1. Extract packets from the main ticket text
+            const titleBodyCodes = adapter.extractPacketCodesFromTicket(detailedTicket);
+            for (const code of titleBodyCodes) {
+              await upsertPacketFromMatrix(code, dbTicket, detailedTicket, null, MatchType.BODY);
+            }
 
-        // 2. Extract packets from all replies
-        const replies = await adapter.fetchTicketReplies(detailedTicket.matrixTicketId);
-        for (const reply of replies) {
-          const replyCodes = extractLikelyPacketCodes(reply.body || "");
-          for (const code of replyCodes) {
-            await upsertPacketFromMatrix(code, dbTicket, detailedTicket, reply, MatchType.REPLY);
+            // 2. Extract packets from all replies
+            const replies = await adapter.fetchTicketReplies(detailedTicket.matrixTicketId);
+            for (const reply of replies) {
+              const replyCodes = extractLikelyPacketCodes(reply.body || "");
+              for (const code of replyCodes) {
+                await upsertPacketFromMatrix(code, dbTicket, detailedTicket, reply, MatchType.REPLY);
+              }
+            }
+
+            results.push({ ticketId: ticket.matrixTicketId });
+          } catch (err) {
+            errors.push({ ticketId: ticket.matrixTicketId, message: err instanceof Error ? err.message : String(err) });
           }
-        }
-
-        results.push({ ticketId: ticket.matrixTicketId });
-      } catch (err) {
-        errors.push({ ticketId: ticket.matrixTicketId, message: err instanceof Error ? err.message : String(err) });
-      }
+        })
+      );
     }
 
     const finalStatus = errors.length === 0 ? RunStatus.SUCCESS : results.length > 0 ? RunStatus.PARTIAL : RunStatus.ERROR;

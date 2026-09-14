@@ -159,25 +159,31 @@ export async function syncGoogleSheetPackets() {
   try {
     const result = await readSheetPackets();
 
-    for (const row of result.rows) {
-      await prisma.packet.upsert({
-        where: { normalizedPacketCode: row.normalizedPacketCode },
-        create: {
-          packetCode: row.packetCode,
-          normalizedPacketCode: row.normalizedPacketCode,
-          issueCategory: row.issueCategory,
-          sourceSheetRowNumber: row.rowNumber,
-          sourceSheetRawData: row.rawData,
-          syncStatus: PacketSyncStatus.PENDING
-        },
-        update: {
-          packetCode: row.packetCode,
-          issueCategory: row.issueCategory,
-          sourceSheetRowNumber: row.rowNumber,
-          sourceSheetRawData: row.rawData,
-          updatedAt: new Date()
-        }
-      });
+    const chunkSize = 50;
+    for (let i = 0; i < result.rows.length; i += chunkSize) {
+      const chunk = result.rows.slice(i, i + chunkSize);
+      await Promise.all(
+        chunk.map((row) =>
+          prisma.packet.upsert({
+            where: { normalizedPacketCode: row.normalizedPacketCode },
+            create: {
+              packetCode: row.packetCode,
+              normalizedPacketCode: row.normalizedPacketCode,
+              issueCategory: row.issueCategory,
+              sourceSheetRowNumber: row.rowNumber,
+              sourceSheetRawData: row.rawData,
+              syncStatus: PacketSyncStatus.PENDING
+            },
+            update: {
+              packetCode: row.packetCode,
+              issueCategory: row.issueCategory,
+              sourceSheetRowNumber: row.rowNumber,
+              sourceSheetRawData: row.rawData,
+              updatedAt: new Date()
+            }
+          })
+        )
+      );
     }
 
     await prisma.syncLog.update({
