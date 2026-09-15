@@ -103,7 +103,7 @@ export async function PUT(request: NextRequest) {
       return fail("Forbidden", 403);
     }
     
-    if (existingReq.status !== "PENDING") {
+    if (existingReq.status !== "PENDING" && session.role !== "ADMIN") {
       return fail("Only pending requests can be edited", 400);
     }
     

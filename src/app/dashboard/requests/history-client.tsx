@@ -1,13 +1,18 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Clock, CheckCircle, XCircle, Send, X, RefreshCw, Trash2 } from "lucide-react";
+import { Clock, CheckCircle, XCircle, Send, X, RefreshCw, Trash2, Edit2, Save } from "lucide-react";
 
 type FilingRequest = {
   id: string;
   trn: string;
   actionType: string;
   remarks: string;
+  firstName?: string;
+  middleName?: string;
+  lastName?: string;
+  sex?: string;
+  birthday?: string;
   status: string;
   matrixTicketId: string | null;
   createdAt: string;
@@ -39,6 +44,11 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedReq, setSelectedReq] = useState<FilingRequest | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Edit Modal state
+  const [editModalReq, setEditModalReq] = useState<FilingRequest | null>(null);
+  const [editForm, setEditForm] = useState<any>({});
+  const [savingEdit, setSavingEdit] = useState(false);
 
   // Modal form state
   const [trackerId, setTrackerId] = useState<number | "">("");
@@ -129,6 +139,43 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
   }, []);
 
   const [successMessage, setSuccessMessage] = useState("");
+
+  function openEditModal(req: FilingRequest) {
+    setEditModalReq(req);
+    setEditForm({
+      actionType: req.actionType,
+      remarks: req.remarks,
+      firstName: req.firstName || "",
+      middleName: req.middleName || "",
+      lastName: req.lastName || "",
+      sex: req.sex || "",
+      birthday: req.birthday ? new Date(req.birthday).toISOString().split("T")[0] : ""
+    });
+  }
+
+  async function handleSaveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editModalReq) return;
+    setSavingEdit(true);
+    try {
+      const res = await fetch("/api/filing", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: editModalReq.id, ...editForm })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setEditModalReq(null);
+        fetchRequests();
+      } else {
+        alert(data.error || "Failed to update request");
+      }
+    } catch (err) {
+      alert("Error saving request");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
 
   function openModal(req: FilingRequest) {
     setSelectedReq(req);
@@ -357,7 +404,7 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
                 <th>TRN</th>
                 <th>Tracker</th>
                 <th>Status</th>
-                {isAdmin && <th style={{ textAlign: "right" }}>Actions</th>}
+                <th style={{ textAlign: "right" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -394,18 +441,29 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
                       </span>
                     )}
                   </td>
-                  {isAdmin && (
-                    <td style={{ textAlign: "right", verticalAlign: "middle" }}>
-                      <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", alignItems: "center" }}>
-                        {req.status !== "FILED" && (
-                          <button 
-                            onClick={() => openModal(req)}
-                            className="btn btn-primary"
-                            style={{ minHeight: "32px", padding: "4px 12px", fontSize: "13px" }}
-                          >
-                            File to Matrix
-                          </button>
-                        )}
+                  <td style={{ textAlign: "right", verticalAlign: "middle" }}>
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", alignItems: "center" }}>
+                      {(req.status === "PENDING" || isAdmin) && (
+                        <button 
+                          onClick={() => openEditModal(req)}
+                          className="btn btn-secondary"
+                          style={{ minHeight: "32px", padding: "4px 12px", fontSize: "13px" }}
+                        >
+                          <Edit2 size={14} style={{ marginRight: "4px" }} /> Edit
+                        </button>
+                      )}
+                      
+                      {isAdmin && req.status !== "FILED" && (
+                        <button 
+                          onClick={() => openModal(req)}
+                          className="btn btn-primary"
+                          style={{ minHeight: "32px", padding: "4px 12px", fontSize: "13px" }}
+                        >
+                          File to Matrix
+                        </button>
+                      )}
+                      
+                      {isAdmin && (
                         <button 
                           onClick={() => handleDelete(req.id)}
                           title="Delete request"
@@ -419,9 +477,9 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
                         >
                           <Trash2 size={16} />
                         </button>
-                      </div>
-                    </td>
-                  )}
+                      )}
+                    </div>
+                  </td>
                 </tr>
                 );
               })}
@@ -538,6 +596,75 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
           </div>
         </div>
       )}
+      {/* Edit Request Modal */}
+      {editModalReq && (
+        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", zIndex: 150, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}>
+          <div style={{ background: "var(--surface)", borderRadius: "8px", width: "100%", maxWidth: "600px", display: "flex", flexDirection: "column", boxShadow: "0 10px 25px rgba(0,0,0,0.2)" }}>
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h2 style={{ fontSize: "16px", fontWeight: 600, margin: 0 }}>Edit Request ({editModalReq.trn})</h2>
+              <button onClick={() => setEditModalReq(null)} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--muted)" }}>
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div style={{ padding: "20px", overflowY: "auto", maxHeight: "70vh" }}>
+              <form id="edit-request-form" onSubmit={handleSaveEdit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  <label style={{ fontSize: "13px", fontWeight: 500 }}>Action Type</label>
+                  <select className="select" value={editForm.actionType} onChange={e => setEditForm({...editForm, actionType: e.target.value})} required>
+                    <option value="Updating">Updating</option>
+                    <option value="Not Updating">Not Updating</option>
+                  </select>
+                </div>
+                
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <label style={{ fontSize: "13px", fontWeight: 500 }}>First Name</label>
+                    <input className="input" value={editForm.firstName} onChange={e => setEditForm({...editForm, firstName: e.target.value})} />
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <label style={{ fontSize: "13px", fontWeight: 500 }}>Middle Name</label>
+                    <input className="input" value={editForm.middleName} onChange={e => setEditForm({...editForm, middleName: e.target.value})} />
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <label style={{ fontSize: "13px", fontWeight: 500 }}>Last Name</label>
+                    <input className="input" value={editForm.lastName} onChange={e => setEditForm({...editForm, lastName: e.target.value})} />
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <label style={{ fontSize: "13px", fontWeight: 500 }}>Sex</label>
+                    <select className="select" value={editForm.sex} onChange={e => setEditForm({...editForm, sex: e.target.value})}>
+                      <option value="">N/A</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                    </select>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <label style={{ fontSize: "13px", fontWeight: 500 }}>Birthday</label>
+                    <input type="date" className="input" value={editForm.birthday} onChange={e => setEditForm({...editForm, birthday: e.target.value})} />
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  <label style={{ fontSize: "13px", fontWeight: 500 }}>Remarks</label>
+                  <textarea className="input" rows={3} value={editForm.remarks} onChange={e => setEditForm({...editForm, remarks: e.target.value})} required />
+                </div>
+              </form>
+            </div>
+
+            <div style={{ padding: "16px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: "8px", background: "#f8fafc", borderBottomLeftRadius: "8px", borderBottomRightRadius: "8px" }}>
+              <button type="submit" form="edit-request-form" className="btn btn-primary" disabled={savingEdit}>
+                {savingEdit ? <RefreshCw size={14} className="spin" style={{ animation: "spin 1s linear infinite" }} /> : <Save size={14} />}
+                Save Changes
+              </button>
+              <button type="button" className="btn" onClick={() => setEditModalReq(null)} disabled={savingEdit}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Success Modal */}
       {successMessage && (
         <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}>
