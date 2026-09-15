@@ -139,6 +139,7 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
   }, []);
 
   const [successMessage, setSuccessMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
   function openEditModal(req: FilingRequest) {
     setEditModalReq(req);
@@ -164,14 +165,15 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
         body: JSON.stringify({ id: editModalReq.id, ...editForm })
       });
       const data = await res.json();
-      if (res.ok && data.success) {
+      if (res.ok) {
         setEditModalReq(null);
         fetchRequests();
+        setSuccessMessage("Request updated successfully!");
       } else {
-        alert(data.error || "Failed to update request");
+        setErrorMessage(data.error || "Failed to update request");
       }
     } catch (err) {
-      alert("Error saving request");
+      setErrorMessage("Error saving request");
     } finally {
       setSavingEdit(false);
     }
@@ -271,10 +273,10 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
         fetchRequests(); // Refresh table
       } else {
         const errData = await res.json();
-        alert(errData.error || "Failed to file to Matrix");
+        setErrorMessage(errData.error || "Failed to file to Matrix");
       }
     } catch (e) {
-      alert("Submission failed. Check network connection.");
+      setErrorMessage("Submission failed. Check network connection.");
     } finally {
       setSubmitting(false);
     }
@@ -287,11 +289,13 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
       const res = await fetch(`/api/filing/${id}`, { method: "DELETE" });
       if (res.ok) {
         fetchRequests();
+        setSuccessMessage("Request deleted successfully!");
       } else {
-        alert("Failed to delete request.");
+        const data = await res.json();
+        setErrorMessage(data.error || "Failed to delete request.");
       }
     } catch (e) {
-      alert("An error occurred while deleting.");
+      setErrorMessage("An error occurred while deleting.");
     }
   }
 
@@ -682,6 +686,28 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
               style={{ width: "100%", justifyContent: "center", minHeight: "44px", fontSize: "15px" }}
             >
               Continue
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Error Modal */}
+      {errorMessage && (
+        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}>
+          <div style={{ background: "var(--surface)", borderRadius: "12px", width: "100%", maxWidth: "400px", padding: "32px", textAlign: "center", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)" }}>
+            <div style={{ width: "64px", height: "64px", borderRadius: "50%", background: "var(--danger-light, #fee2e2)", color: "var(--danger)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
+              <XCircle size={32} />
+            </div>
+            <h2 style={{ fontSize: "20px", fontWeight: 700, margin: "0 0 12px 0", color: "var(--text)" }}>Oops!</h2>
+            <p style={{ fontSize: "15px", color: "var(--muted)", margin: "0 0 24px 0", lineHeight: 1.5 }}>
+              {errorMessage}
+            </p>
+            <button 
+              onClick={() => setErrorMessage("")}
+              className="btn"
+              style={{ width: "100%", justifyContent: "center", minHeight: "44px", fontSize: "15px", border: "1px solid var(--border)" }}
+            >
+              Dismiss
             </button>
           </div>
         </div>
