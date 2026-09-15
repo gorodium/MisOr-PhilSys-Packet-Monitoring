@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Clock, CheckCircle, XCircle, Send, X, RefreshCw, Trash2, Edit2, Save } from "lucide-react";
+import { Clock, CheckCircle, XCircle, Send, X, RefreshCw, Trash2, Edit2, Save, Download } from "lucide-react";
 
 type FilingRequest = {
   id: string;
@@ -17,6 +17,7 @@ type FilingRequest = {
   matrixTicketId: string | null;
   createdAt: string;
   updatedAt: string;
+  user?: { username: string };
 };
 
 function getNextWorkday(date: Date) {
@@ -49,6 +50,12 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
   const [editModalReq, setEditModalReq] = useState<FilingRequest | null>(null);
   const [editForm, setEditForm] = useState<any>({});
   const [savingEdit, setSavingEdit] = useState(false);
+
+  // Export Modal state
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportRange, setExportRange] = useState("today");
+  const [exportStart, setExportStart] = useState("");
+  const [exportEnd, setExportEnd] = useState("");
 
   // Modal form state
   const [trackerId, setTrackerId] = useState<number | "">("");
@@ -299,6 +306,61 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
     }
   }
 
+  function handleExportCSV(e: React.FormEvent) {
+    e.preventDefault();
+    let filtered = requests;
+    const now = new Date();
+    
+    if (exportRange === "today") {
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      filtered = requests.filter(r => new Date(r.createdAt) >= today);
+    } else if (exportRange === "week") {
+      const startOfWeek = new Date(now);
+      startOfWeek.setDate(now.getDate() - now.getDay());
+      startOfWeek.setHours(0,0,0,0);
+      filtered = requests.filter(r => new Date(r.createdAt) >= startOfWeek);
+    } else if (exportRange === "month") {
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      filtered = requests.filter(r => new Date(r.createdAt) >= startOfMonth);
+    } else if (exportRange === "custom" && exportStart && exportEnd) {
+      const start = new Date(exportStart);
+      start.setHours(0,0,0,0);
+      const end = new Date(exportEnd);
+      end.setHours(23,59,59,999);
+      filtered = requests.filter(r => {
+        const d = new Date(r.createdAt);
+        return d >= start && d <= end;
+      });
+    }
+
+    const headers = ["Date Filed", "TRN", "Tracker", "Remarks", "First Name", "Last Name", "Filer (Username)", "Status"];
+    const rows = filtered.map(r => [
+      new Date(r.createdAt).toLocaleString(),
+      r.trn || "",
+      r.actionType || "",
+      r.remarks || "",
+      r.firstName || "",
+      r.lastName || "",
+      r.user?.username || "",
+      r.status || ""
+    ]);
+    
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""').replace(/\n/g, " ")}"`).join(","))
+    ].join("\n");
+    
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `TRN_Export_${exportRange}_${new Date().toISOString().split("T")[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setIsExportModalOpen(false);
+  }
+
   const [activeTab, setActiveTab] = useState<"pending" | "filed">("pending");
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
 
@@ -331,11 +393,18 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
 
   return (
     <>
-      <header className="page-header">
+      <header className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
           <h1 className="page-title">Filing History</h1>
           <p className="page-kicker">Review past Matrix Filing requests</p>
         </div>
+        <button 
+          onClick={() => setIsExportModalOpen(true)}
+          className="btn btn-secondary"
+          style={{ display: "flex", gap: "8px", alignItems: "center" }}
+        >
+          <Download size={16} /> Export CSV
+        </button>
       </header>
 
       <section aria-label="Filing stats" style={{ display: "flex", justifyContent: "center", gap: "16px", marginBottom: "24px", flexWrap: "wrap" }}>
@@ -664,6 +733,55 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
                 Save Changes
               </button>
               <button type="button" className="btn" onClick={() => setEditModalReq(null)} disabled={savingEdit}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Export Modal */}
+      {isExportModalOpen && (
+        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", zIndex: 150, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}>
+          <div style={{ background: "var(--surface)", borderRadius: "8px", width: "100%", maxWidth: "400px", display: "flex", flexDirection: "column", boxShadow: "0 10px 25px rgba(0,0,0,0.2)" }}>
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h2 style={{ fontSize: "16px", fontWeight: 600, margin: 0 }}>Export Filed Requests</h2>
+              <button onClick={() => setIsExportModalOpen(false)} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--muted)" }}>
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div style={{ padding: "20px" }}>
+              <form id="export-form" onSubmit={handleExportCSV} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  <label style={{ fontSize: "13px", fontWeight: 500 }}>Date Range</label>
+                  <select className="select" value={exportRange} onChange={e => setExportRange(e.target.value)} required>
+                    <option value="today">Today</option>
+                    <option value="week">This Week</option>
+                    <option value="month">This Month</option>
+                    <option value="all">All Time</option>
+                    <option value="custom">Custom Range</option>
+                  </select>
+                </div>
+                
+                {exportRange === "custom" && (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                      <label style={{ fontSize: "13px", fontWeight: 500 }}>Start Date</label>
+                      <input type="date" className="input" value={exportStart} onChange={e => setExportStart(e.target.value)} required />
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                      <label style={{ fontSize: "13px", fontWeight: 500 }}>End Date</label>
+                      <input type="date" className="input" value={exportEnd} onChange={e => setExportEnd(e.target.value)} required />
+                    </div>
+                  </div>
+                )}
+              </form>
+            </div>
+
+            <div style={{ padding: "16px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: "8px", background: "#f8fafc", borderBottomLeftRadius: "8px", borderBottomRightRadius: "8px" }}>
+              <button type="submit" form="export-form" className="btn btn-primary" style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <Download size={14} /> Download CSV
+              </button>
+              <button type="button" className="btn" onClick={() => setIsExportModalOpen(false)}>Cancel</button>
             </div>
           </div>
         </div>

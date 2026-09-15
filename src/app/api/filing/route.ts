@@ -74,7 +74,10 @@ export async function GET(request: NextRequest) {
 
     const requests = await prisma.matrixFilingRequest.findMany({
       where,
-      orderBy: { createdAt: "desc" }
+      orderBy: { createdAt: "desc" },
+      include: {
+        user: { select: { username: true } }
+      }
     });
     return ok(requests);
   } catch (error) {
