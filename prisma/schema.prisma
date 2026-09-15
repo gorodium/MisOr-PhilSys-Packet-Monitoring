@@ -167,8 +167,40 @@ model MatrixFilingRequest {
   status         String    @default("PENDING") // PENDING, FILED, ERROR
   matrixTicketId String?
   createdAt      DateTime  @default(now())
+  userId         String?
+  user           User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   updatedAt      DateTime  @updatedAt
 
+  @@index([userId])
   @@index([trn])
+  @@index([status])
+}
+
+enum UserRole {
+  ADMIN
+  EMPLOYEE
+}
+
+model User {
+  id                  String                 @id @default(cuid())
+  username            String                 @unique
+  passwordHash        String
+  role                UserRole               @default(EMPLOYEE)
+  forcePasswordChange Boolean                @default(true)
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  filingRequests      MatrixFilingRequest[]
+  passwordResets      PasswordResetRequest[]
+}
+
+model PasswordResetRequest {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status    String   @default("PENDING")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
   @@index([status])
 }

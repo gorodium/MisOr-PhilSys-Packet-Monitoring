@@ -1,13 +1,13 @@
 import { NextRequest } from "next/server";
 import { handleApiError, ok } from "@/lib/api";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { assertRateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const forbidden = requireAdmin(request);
+  const forbidden = await requireAdminApi();
   if (forbidden) {
     return forbidden;
   }

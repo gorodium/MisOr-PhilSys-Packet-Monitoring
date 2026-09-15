@@ -1,7 +1,7 @@
 import { RunStatus } from "@prisma/client";
 import { NextRequest } from "next/server";
 import { handleApiError, ok } from "@/lib/api";
-import { getRequestActor, requireAdmin } from "@/lib/auth";
+import { verifySession, requireAdminApi } from "@/lib/auth";
 import { syncGoogleSheetPackets } from "@/lib/google-sheets";
 import { assertRateLimit } from "@/lib/rate-limit";
 import { writeAuditLog } from "@/lib/audit";
@@ -9,7 +9,7 @@ import { writeAuditLog } from "@/lib/audit";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  const forbidden = requireAdmin(request);
+  const forbidden = await requireAdminApi();
   if (forbidden) {
     return forbidden;
   }
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     return limited;
   }
 
-  const actor = getRequestActor(request);
+  const actor = 'system';
 
   try {
     const result = await syncGoogleSheetPackets();

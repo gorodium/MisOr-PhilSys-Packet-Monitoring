@@ -1,36 +1,53 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { jwtVerify } from 'jose';
 
-function readBooleanEnv(name: string, fallback = false) {
-  const value = process.env[name];
-  if (!value) {
-    return fallback;
-  }
+const secretKey = process.env.JWT_SECRET || "default_secret_key_change_me_in_production";
+const key = new TextEncoder().encode(secretKey);
 
-  return ["1", "true", "yes", "on"].includes(value.toLowerCase());
-}
-
-function defaultRole() {
-  return process.env.APP_DEFAULT_ROLE ?? (process.env.NODE_ENV === "production" ? "viewer" : "admin");
-}
-
-export function proxy(request: NextRequest) {
-  const authCookie = request.cookies.get("admin_auth")?.value;
-  if (authCookie === "authenticated") {
+export async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  
+  // Public assets
+  if (
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/api/auth/login') ||
+    pathname.startsWith('/api/auth/logout') ||
+    pathname === '/login' ||
+    pathname.includes('.')
+  ) {
     return NextResponse.next();
   }
 
-  const trustedAuthHeader = readBooleanEnv("TRUSTED_AUTH_HEADER");
-  if (trustedAuthHeader) {
-    const roleHeader = process.env.AUTH_ROLE_HEADER ?? "x-philsys-role";
-    const role = request.headers.get(roleHeader);
-    if (role?.toLowerCase() === "admin") {
-      return NextResponse.next();
-    }
+  // Check auth
+  const sessionToken = request.cookies.get('session')?.value;
+  
+  if (!sessionToken) {
+    return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  return NextResponse.redirect(new URL("/login", request.url));
+  try {
+    const { payload } = await jwtVerify(sessionToken, key, {
+      algorithms: ["HS256"],
+    });
+
+    // Handle force password change logic
+    if (payload.forcePasswordChange === true && pathname !== '/change-password' && !pathname.startsWith('/api/auth/change-password')) {
+      return NextResponse.redirect(new URL('/change-password', request.url));
+    }
+    
+    // Redirect / to /dashboard
+    if (pathname === '/') {
+       return NextResponse.redirect(new URL('/dashboard', request.url));
+    }
+
+    return NextResponse.next();
+  } catch (err) {
+    // Invalid token
+    return NextResponse.redirect(new URL('/login', request.url));
+  }
 }
 
 export const config = {
-  matcher: ["/automation/:path*", "/settings/:path*", "/logs/:path*"]
+  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 };

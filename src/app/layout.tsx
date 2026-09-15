@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
 import { AppShell } from "@/components/app-shell";
+import { verifySession } from "@/lib/auth";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -9,8 +9,8 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  const cookieStore = await cookies();
-  const isAdmin = cookieStore.get("admin_auth")?.value === "authenticated";
+  const session = await verifySession();
+  const isAdmin = session?.role === "ADMIN";
 
   return (
     <html lang="en">

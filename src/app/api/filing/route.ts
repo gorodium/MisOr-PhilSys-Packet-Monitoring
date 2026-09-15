@@ -3,6 +3,8 @@ import { z } from "zod";
 import { handleApiError, ok, fail } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 
+import { verifySession } from "@/lib/auth";
+
 const filingSchema = z.object({
   trn: z.string().length(29),
   actionType: z.string(),
@@ -16,10 +18,12 @@ const filingSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await verifySession();
+    if (!session) return fail("Unauthorized", 401);
+
     const body = await request.json();
     const data = filingSchema.parse(body);
 
-    // Check if TRN is already filed
     const existingReq = await prisma.matrixFilingRequest.findFirst({
       where: { trn: data.trn }
     });
@@ -28,7 +32,6 @@ export async function POST(request: NextRequest) {
       return fail(`This TRN (${data.trn}) has already been filed in the system.`, 400);
     }
 
-    // Check if TRN already exists in Matrix directly
     try {
       const { createMatrixAdapter } = await import("@/lib/matrix/adapter");
       const adapter = await createMatrixAdapter();
@@ -41,7 +44,6 @@ export async function POST(request: NextRequest) {
       console.warn("Failed to check Matrix for existing tickets, proceeding anyway...", err);
     }
 
-    // Save to DB
     const req = await prisma.matrixFilingRequest.create({
       data: {
         trn: data.trn,
@@ -52,7 +54,8 @@ export async function POST(request: NextRequest) {
         lastName: data.lastName,
         sex: data.sex,
         birthday: data.birthday ? new Date(data.birthday) : null,
-        status: "PENDING"
+        status: "PENDING",
+        userId: session.userId
       }
     });
 
@@ -64,7 +67,13 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    const session = await verifySession();
+    if (!session) return fail("Unauthorized", 401);
+
+    const where = session.role === "ADMIN" ? {} : { userId: session.userId };
+
     const requests = await prisma.matrixFilingRequest.findMany({
+      where,
       orderBy: { createdAt: "desc" }
     });
     return ok(requests);
@@ -73,3 +82,44 @@ export async function GET(request: NextRequest) {
   }
 }
 
+export async function PUT(request: NextRequest) {
+  try {
+    const session = await verifySession();
+    if (!session) return fail("Unauthorized", 401);
+
+    const body = await request.json();
+    const { id, ...updateData } = body;
+    
+    if (!id) return fail("Filing request ID is required", 400);
+    
+    const existingReq = await prisma.matrixFilingRequest.findUnique({
+      where: { id }
+    });
+    
+    if (!existingReq) return fail("Request not found", 404);
+    
+    // Only admins or the owner can edit
+    if (session.role !== "ADMIN" && existingReq.userId !== session.userId) {
+      return fail("Forbidden", 403);
+    }
+    
+    if (existingReq.status !== "PENDING") {
+      return fail("Only pending requests can be edited", 400);
+    }
+    
+    // Clean data before update
+    const safeData = filingSchema.omit({ trn: true }).partial().parse(updateData);
+    
+    const req = await prisma.matrixFilingRequest.update({
+      where: { id },
+      data: {
+        ...safeData,
+        birthday: safeData.birthday ? new Date(safeData.birthday) : undefined,
+      }
+    });
+    
+    return ok(req);
+  } catch (error) {
+    return handleApiError(error);
+  }
+}

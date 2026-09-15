@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { createTicketsForPackets } from "@/lib/automation";
 import { handleApiError, ok } from "@/lib/api";
-import { getRequestActor, requireAdmin } from "@/lib/auth";
+import { verifySession, requireAdminApi } from "@/lib/auth";
 import { assertRateLimit } from "@/lib/rate-limit";
 import { writeAuditLog } from "@/lib/audit";
 
@@ -15,7 +15,7 @@ const createTicketsSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const forbidden = requireAdmin(request);
+  const forbidden = await requireAdminApi();
   if (forbidden) {
     return forbidden;
   }
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     return limited;
   }
 
-  const actor = getRequestActor(request);
+  const actor = 'system';
 
   try {
     const body = createTicketsSchema.parse(await request.json());
