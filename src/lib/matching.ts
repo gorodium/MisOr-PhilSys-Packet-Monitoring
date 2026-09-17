@@ -20,6 +20,7 @@ function extractTagsFromReplies(replies: any[]): string[] {
     if (r.includes("available to download") || r.includes("available for download")) tags.add("available_to_download");
     if (r.includes("backend restoration") || r.includes("for backend restoration") || r.includes("initial registration")) tags.add("for_backend_restoration");
     if (r.includes("still processing on the backend") || r.includes("still in process") || r.includes("awaiting") || r.includes("still processing")) tags.add("still_in_process");
+    if (r.includes("unrecoverable") || r.includes("re-registration")) tags.add("unrecoverable");
     if (r.includes("potential duplicate") || r.includes("duplicate match") || r.includes("identified with a potential duplicate")) tags.add("potential_duplicate");
     if (r.includes("biometrics") || r.includes("biometric")) tags.add("biometrics_issue");
     if (r.includes("individual authentication") || r.includes("authentication was unsuccessful")) tags.add("authentication_failed");

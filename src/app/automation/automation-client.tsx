@@ -25,7 +25,7 @@ type JobState =
   | { phase: "idle" }
   | { phase: "searching" }
   | { phase: "success"; steps: StepLine[]; uploadedTo: string; destFolder: string; packetName: string; commentPosted: boolean; alreadyUploaded: boolean; isRestored?: boolean }
-  | { phase: "error"; steps: StepLine[]; error: string };
+  | { phase: "error"; steps: StepLine[]; error: string; unrecoverableTagged?: boolean };
 
 // ──────────────────────────────────────────────
 // Helpers
@@ -352,7 +352,46 @@ export function AutomationClient() {
     });
   }
 
-  // ── Reset job for a packet ──
+  // 🚀 Tag unrecoverable manually 🚀
+  async function tagUnrecoverable(packet: RestorePacket, job: JobState) {
+    if (job.phase !== "error" || !packet.ticketId) return;
+
+    const key = packet.id;
+    setCommentingFor(prev => new Set(prev).add(key));
+    try {
+      const res = await fetch("/api/matrix/comment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          packetId: packet.id,
+          ticketId: packet.ticketId,
+          ticketNumber: packet.ticketNumber,
+          comment: `${packet.packetCode}\n\nUnrecoverable/Re-Registration`
+        }),
+      });
+
+      if (!res.ok) {
+        let errMsg = `HTTP ${res.status}`;
+        try {
+          const errData = await res.json();
+          if (errData.error) errMsg = errData.error;
+        } catch (_) {}
+        alert(`Failed to tag unrecoverable for ${packet.ticketNumber}: ${errMsg}`);
+      } else {
+        updateGlobalJobs(key, { ...job, unrecoverableTagged: true });
+      }
+    } catch (err: any) {
+      alert(`Error tagging unrecoverable for ${packet.ticketNumber}: ${err.message}`);
+    } finally {
+      setCommentingFor(prev => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
+  }
+
+  // 🚀 Reset job for a packet 🚀──
   function resetJob(key: string) {
     globalJobs.delete(key);
     notifyGlobalListeners();
@@ -650,17 +689,35 @@ export function AutomationClient() {
                           )}
 
                           {job.phase === "error" && (
-                            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", alignItems: "center" }}>
+                            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap" }}>
                               <span style={{ color: "var(--danger)", fontSize: "0.82rem", display: "flex", alignItems: "center", gap: 4 }}>
                                 <XCircle size={14} /> {job.error?.includes("Packet not found") ? "Packet Not Found" : "Failed"}
                               </span>
-                              <button
-                                className="btn"
-                                style={{ fontSize: "0.75rem", padding: "3px 10px" }}
-                                onClick={() => resetJob(packet.id)}
-                              >
-                                Retry
-                              </button>
+                              {!job.unrecoverableTagged ? (
+                                <>
+                                  {job.error?.includes("Packet not found") && (
+                                    <button
+                                      className="btn btn-secondary"
+                                      style={{ fontSize: "0.75rem", padding: "3px 10px" }}
+                                      disabled={isCommenting}
+                                      onClick={() => tagUnrecoverable(packet, job)}
+                                    >
+                                      Tag Unrecoverable
+                                    </button>
+                                  )}
+                                  <button
+                                    className="btn"
+                                    style={{ fontSize: "0.75rem", padding: "3px 10px" }}
+                                    onClick={() => resetJob(packet.id)}
+                                  >
+                                    Retry
+                                  </button>
+                                </>
+                              ) : (
+                                <span style={{ color: "#eab308", fontWeight: 700, fontSize: "0.82rem", display: "flex", alignItems: "center", gap: 4 }}>
+                                  <CheckCircle size={14} /> Tagged Unrecoverable
+                                </span>
+                              )}
                             </div>
                           )}
                         </td>

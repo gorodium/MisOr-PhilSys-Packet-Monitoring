@@ -17,6 +17,7 @@ const statusFilters = [
 const remarksFilters = [
   { value: "", label: "All Remarks" },
   { value: "available_to_download", label: "Available to Download" },
+  { value: "unrecoverable", label: "Unrecoverable" },
   { value: "for_backend_restoration", label: "For Backend Restoration" },
   { value: "still_in_process", label: "Still in Process" },
   { value: "potential_duplicate", label: "Potential Duplicate" },
@@ -40,6 +41,9 @@ function getRemarksBadges(packet: PacketRow): RemarksBadge[] {
   if (isAvailable) {
     badges.push({ label: "Available to Download", bg: "#dcfce7", color: "#166534" });
   } else {
+    if (tags.includes("unrecoverable") || r.includes("unrecoverable") || r.includes("re-registration")) {
+      badges.push({ label: "Unrecoverable", bg: "#fee2e2", color: "#991b1b" });
+    }
     if (tags.includes("for_backend_restoration") || packet.restorationCommented || packet.restorationUploaded || r.includes("backend restoration") || r.includes("for backend restoration")) {
       badges.push({ label: "For Backend Restoration", bg: "#ffedd5", color: "#9a3412" });
     }
@@ -70,9 +74,13 @@ function matchesRemarksFilter(packet: PacketRow, filter: string): boolean {
   
   if (filter === "available_to_download") return isAvailable;
   if (isAvailable) {
-    if (filter === "for_backend_restoration" || filter === "still_in_process") return false;
+    if (filter === "for_backend_restoration" || filter === "still_in_process" || filter === "unrecoverable") return false;
   }
   
+  if (filter === "unrecoverable") {
+    return tags.includes("unrecoverable") || r.includes("unrecoverable") || r.includes("re-registration");
+  }
+
   if (filter === "for_backend_restoration") {
     return tags.includes("for_backend_restoration") || packet.restorationCommented || packet.restorationUploaded || r.includes("backend restoration") || r.includes("for backend restoration");
   }
