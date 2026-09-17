@@ -487,6 +487,10 @@ export async function copyPacketToDestination(
       return { path: destPath, alreadyUploaded: false };
     } catch (err) {
       lastError = err;
+      if ((err as Error).message === "Packet already uploaded") {
+        try { dstConn?.end(); } catch {}
+        throw err;
+      }
       progressCallback?.(`⚠️ Attempt ${attempt} failed: ${(err as Error).message}`);
       // Clean up partial on error
       if (dstConn) {
@@ -531,6 +535,14 @@ export async function uploadBufferToNas(
       const dst = await createSftp(destHost, username, destPassword);
       dstConn = dst.conn;
 
+      // Check if file already exists
+      const dstAttr = await statPath(dst.sftp, destPath);
+      if (dstAttr) {
+        progressCallback?.(`File already exists on destination.`);
+        // If it exists, throw a specific error message
+        throw new Error("Packet already uploaded");
+      }
+
       // Ensure destination folder exists
       progressCallback?.(`Creating destination folder: ${destFolder}`);
       await mkdirP(dst.sftp, destFolder);
@@ -560,6 +572,10 @@ export async function uploadBufferToNas(
       return { path: destPath };
     } catch (err) {
       lastError = err;
+      if ((err as Error).message === "Packet already uploaded") {
+        try { dstConn?.end(); } catch {}
+        throw err;
+      }
       progressCallback?.(`⚠️ Attempt ${attempt} failed: ${(err as Error).message}`);
       if (dstConn) {
         try {
