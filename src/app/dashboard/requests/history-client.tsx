@@ -405,10 +405,10 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
     }
 
     const headers = ["Date Filed", "TRN", "Tracker", "Remarks", "First Name", "Last Name", "Filer (Username)", "Status"];
-    const rows = filtered.map(r => [
-      new Date(r.createdAt).toLocaleString(),
-      r.trn || "",
-      r.actionType || "",
+      const rows = filtered.map(r => [
+        new Date(r.createdAt).toLocaleString(),
+        r.trn ? `\t${r.trn}` : "",
+        r.actionType || "",
       r.remarks || "",
       r.firstName || "",
       r.lastName || "",
