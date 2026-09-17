@@ -1,17 +1,15 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, RefreshCw, Search, SlidersHorizontal, ArchiveRestore, Clock, Download, Copy, Fingerprint, UserX } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw, Search, SlidersHorizontal, ArchiveRestore, Clock, Download, Copy, Fingerprint, UserX, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StatusBadge } from "@/components/status-badge";
 import { ISSUE_FILTERS } from "@/lib/constants";
 
 const statusFilters = [
-  { value: "", label: "All Statuses" },
+  { value: "", label: "All" },
   { value: "FILED", label: "Filed" },
-  { value: "NOT_FILED", label: "Not Filed" },
-  { value: "NEEDS_REVIEW", label: "Needs Review" },
-  { value: "ERROR", label: "Error" }
+  { value: "NOT_FILED", label: "Pending" }
 ];
 
 const remarksFilters = [
@@ -117,6 +115,8 @@ type PacketRow = {
   requiredInitialTrn: string | null;
   latestMatrixReplyAuthor: string | null;
   lastCheckedAt: string | null;
+  assignedTo?: string | null;
+  author?: string | null;
 };
 
 
@@ -340,18 +340,6 @@ export function DashboardClient({ isAdmin = false }: { isAdmin?: boolean }) {
           style={{ flex: "1", minWidth: "200px" }}
         />
         <select
-          id="dashboard-category-filter"
-          className="select"
-          value={category}
-          onChange={(event) => handleCategoryChange(event.target.value)}
-        >
-          {ISSUE_FILTERS.map((filter) => (
-            <option key={filter} value={filter}>
-              {filter}
-            </option>
-          ))}
-        </select>
-        <select
           id="dashboard-status-filter"
           className="select"
           value={status}
@@ -375,10 +363,12 @@ export function DashboardClient({ isAdmin = false }: { isAdmin?: boolean }) {
             </option>
           ))}
         </select>
-        <button className="btn btn-outline" onClick={loadPackets} disabled={loading} style={{ height: "36px", display: "flex", alignItems: "center", gap: "6px" }}>
-          <RefreshCw size={14} className={loading ? "spin" : ""} />
-          Refresh
-        </button>
+        {search || status || remarksFilter ? (
+          <button className="btn btn-outline" onClick={() => { setSearch(""); setStatus(""); setRemarksFilter(""); setPage(1); }} disabled={loading} style={{ height: "36px", display: "flex", alignItems: "center", gap: "6px" }}>
+            <XCircle size={14} />
+            Clear Filter
+          </button>
+        ) : null}
       </div>
 
       {error ? <div className="alert">{error}</div> : null}
@@ -401,6 +391,8 @@ export function DashboardClient({ isAdmin = false }: { isAdmin?: boolean }) {
                 <th style={{ width: "22%" }}>Packet</th>
                 <th style={{ width: "18%" }}>Status</th>
                 <th style={{ width: "16%" }}>Ticket Number</th>
+                <th style={{ width: "12%" }}>Assigned To</th>
+                <th style={{ width: "12%" }}>Filed By</th>
                 <th>Remarks</th>
               </tr>
             </thead>
@@ -451,6 +443,8 @@ export function DashboardClient({ isAdmin = false }: { isAdmin?: boolean }) {
                     <StatusBadge status={packet.syncStatus} label={packet.statusLabel} />
                   </td>
                   <td className="mono">{packet.ticketNumber ?? "—"}</td>
+                  <td style={{ color: "var(--muted)" }}>{packet.assignedTo || "—"}</td>
+                  <td style={{ color: "var(--muted)" }}>{packet.author || "—"}</td>
                   <td className="remarks-cell">
                     {packet.latestMatrixReply ? (
                       <>

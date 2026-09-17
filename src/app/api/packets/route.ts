@@ -30,6 +30,39 @@ function parseStatus(value: string | undefined) {
     : undefined;
 }
 
+
+let cachedMyName: string | null = null;
+let lastCacheTime = 0;
+
+async function getMyName() {
+  if (cachedMyName && Date.now() - lastCacheTime < 1000 * 60 * 60) {
+    return cachedMyName;
+  }
+  try {
+    const { getStoredSettings } = await import("@/lib/settings");
+    const stored = await getStoredSettings();
+    const matrixApiKey = stored.get("matrixApiKey")?.value || process.env.MATRIX_API_KEY;
+    const matrixBaseUrl = stored.get("matrixBaseUrl")?.value || process.env.MATRIX_BASE_URL;
+    
+    if (matrixApiKey && matrixBaseUrl) {
+      const res = await fetch(`${matrixBaseUrl.replace(/\/$/, "")}/users/current.json`, {
+        headers: { "X-Redmine-API-Key": matrixApiKey, "Accept": "application/json" },
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const first = data.user?.firstname || "";
+        const last = data.user?.lastname || "";
+        cachedMyName = `${first} ${last}`.trim();
+        lastCacheTime = Date.now();
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+  return cachedMyName || "Joven Dalawangbayan"; // fallback to known name if api fails
+}
+
 export async function GET(request: NextRequest) {
   const limited = assertRateLimit(request, "packets:list");
   if (limited) {
@@ -103,10 +136,12 @@ export async function GET(request: NextRequest) {
       cAvailableToDownload,
       cPotentialDuplicate,
       cBiometricsIssue,
-      cAuthenticationFailed
+      cAuthenticationFailed,
+      cUnrecoverable
     ] = await Promise.all([
       prisma.packet.findMany({
         where,
+        include: { matrixTicket: true },
         orderBy: [{ issueCategory: "asc" }, { sourceSheetRowNumber: "asc" }],
         skip,
         take: query.pageSize
@@ -117,7 +152,7 @@ export async function GET(request: NextRequest) {
       prisma.packet.count({ where: { syncStatus: PacketSyncStatus.NOT_FILED } }),
       prisma.packet.count({ where: { syncStatus: PacketSyncStatus.NEEDS_REVIEW } }),
       prisma.packet.count({ where: { syncStatus: PacketSyncStatus.ERROR } }),
-      prisma.packet.count({ where: { latestMatrixReply: { not: null } } }),
+      prisma.packet.count({ where: { latestMatrixReply: { not: null }, latestMatrixReplyAuthor: { not: await getMyName() } } }),
       prisma.syncLog.findFirst({
         where: { finishedAt: { not: null } },
         orderBy: { finishedAt: "desc" }
@@ -143,18 +178,35 @@ export async function GET(request: NextRequest) {
       prisma.packet.count({ where: { OR: [{ matrixTags: { has: "available_to_download" } }, { latestMatrixReply: { contains: "available to download", mode: "insensitive" } }, { latestMatrixReply: { contains: "available for download", mode: "insensitive" } }] } }),
       prisma.packet.count({ where: { OR: [{ matrixTags: { has: "potential_duplicate" } }, { latestMatrixReply: { contains: "potential duplicate", mode: "insensitive" } }, { latestMatrixReply: { contains: "duplicate match", mode: "insensitive" } }, { latestMatrixReply: { contains: "identified with a potential duplicate", mode: "insensitive" } }] } }),
       prisma.packet.count({ where: { OR: [{ matrixTags: { has: "biometrics_issue" } }, { latestMatrixReply: { contains: "biometrics", mode: "insensitive" } }, { latestMatrixReply: { contains: "biometric", mode: "insensitive" } }] } }),
-      prisma.packet.count({ where: { OR: [{ matrixTags: { has: "authentication_failed" } }, { latestMatrixReply: { contains: "individual authentication", mode: "insensitive" } }, { latestMatrixReply: { contains: "authentication was unsuccessful", mode: "insensitive" } }] } })
+      prisma.packet.count({ where: { OR: [{ matrixTags: { has: "authentication_failed" } }, { latestMatrixReply: { contains: "individual authentication", mode: "insensitive" } }, { latestMatrixReply: { contains: "authentication was unsuccessful", mode: "insensitive" } }] } }),
+      prisma.packet.count({ where: { OR: [{ matrixTags: { has: "unrecoverable" } }, { latestMatrixReply: { contains: "unrecoverable", mode: "insensitive" } }, { latestMatrixReply: { contains: "re-registration", mode: "insensitive" } }] } })
     ]);
 
     const totalPages = Math.max(1, Math.ceil(filteredTotal / query.pageSize));
 
     return ok({
-        packets: packets.map((packet) => ({
-          ...packet,
-          statusLabel: STATUS_LABELS[packet.syncStatus],
-          proLptFolder: machineFolderForPacket(packet.normalizedPacketCode),
-          province: machineProvinceForPacket(packet.normalizedPacketCode),
-        })),
+        packets: packets.map((packetObj) => {
+          let assignedTo = null;
+          let author = null;
+          if ((packetObj as any).matrixTicket) {
+             author = (packetObj as any).matrixTicket.author;
+             try {
+               const rd = (packetObj as any).matrixTicket.rawData as any;
+               if (rd?.assigned_to?.name) {
+                 assignedTo = rd.assigned_to.name;
+               }
+             } catch (e) {}
+          }
+          const { matrixTicket, ...rest } = (packetObj as any);
+          return {
+            ...rest,
+            statusLabel: STATUS_LABELS[packetObj.syncStatus as PacketSyncStatus],
+            proLptFolder: machineFolderForPacket(packetObj.normalizedPacketCode),
+            province: machineProvinceForPacket(packetObj.normalizedPacketCode),
+            assignedTo,
+            author,
+          };
+        }),
       pagination: {
         page: query.page,
         pageSize: query.pageSize,
@@ -175,7 +227,8 @@ export async function GET(request: NextRequest) {
         availableToDownload: cAvailableToDownload,
         potentialDuplicate: cPotentialDuplicate,
         biometricsIssue: cBiometricsIssue,
-        authenticationFailed: cAuthenticationFailed
+        authenticationFailed: cAuthenticationFailed,
+        unrecoverable: cUnrecoverable
       },
       lastSyncedAt: latestSync?.finishedAt ?? null
     });

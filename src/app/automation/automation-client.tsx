@@ -1,7 +1,8 @@
 "use client";
 
-import { HardDriveDownload, RefreshCw, Loader2, CheckCircle, XCircle, MessageSquare } from "lucide-react";
+import { HardDriveDownload, RefreshCw, Loader2, CheckCircle, XCircle, MessageSquare, Download } from "lucide-react";
 import { useEffect, useState, useCallback, Fragment } from "react";
+import * as XLSX from "xlsx";
 
 // ──────────────────────────────────────────────
 // Types
@@ -17,6 +18,7 @@ type RestorePacket = {
   province: string;
   requiredInitialTrn: string | null;
   restorationNotFound: boolean;
+  unrecoverable: boolean;
 };
 
 type StepLine = { text: string; type: "info" | "ok" | "error" | "warn" };
@@ -94,7 +96,9 @@ export function AutomationClient() {
   const [isRecoveringAll, setIsRecoveringAll] = useState(globalIsRecoveringAll);
   const [isPostingAll, setIsPostingAll] = useState(globalIsPostingAll);
   const [commentingFor, setCommentingFor] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<"pending" | "completed" | "not_found">("pending");
+  const [activeTab, setActiveTab] = useState<"pending" | "completed" | "not_found" | "unrecoverable">("pending");
+  const [filterProvince, setFilterProvince] = useState("");
+  const [sortBy, setSortBy] = useState<"default" | "trn_asc" | "trn_desc">("default");
   const [confirmDialog, setConfirmDialog] = useState<{ title: string; message: string; onConfirm: () => void; onCancel: () => void } | null>(null);
 
   useEffect(() => {
@@ -130,9 +134,19 @@ export function AutomationClient() {
           province: p.province ?? "",
           requiredInitialTrn: p.requiredInitialTrn ?? null,
           restorationNotFound: p.restorationNotFound ?? false,
+          unrecoverable: p.matrixTags?.includes("unrecoverable") || (p.latestMatrixReply || "").toLowerCase().includes("unrecoverable") || (p.latestMatrixReply || "").toLowerCase().includes("re-registration"),
         });
 
-        if (p.restorationUploaded || p.restorationCommented) {
+        const isUnrecoverable = p.matrixTags?.includes("unrecoverable") || (p.latestMatrixReply || "").toLowerCase().includes("unrecoverable") || (p.latestMatrixReply || "").toLowerCase().includes("re-registration");
+        
+        if (isUnrecoverable) {
+          newJobs.set(p.id, {
+            phase: "error",
+            steps: [{ text: "❌ Marked as Unrecoverable", type: "error" }],
+            error: "Packet not found",
+            unrecoverableTagged: true,
+          });
+        } else if (p.restorationUploaded || p.restorationCommented) {
           const trnToUse = p.requiredInitialTrn || p.packetCode;
           newJobs.set(p.id, {
             phase: "success",
@@ -392,6 +406,45 @@ export function AutomationClient() {
   }
 
   // 🚀 Reset job for a packet 🚀──
+  function exportToExcel(packetsToExport: RestorePacket[]) {
+    const data = packetsToExport.map(p => {
+      const job = jobs.get(p.id);
+      let status = "Pending";
+      if (job?.phase === "success") status = job.commentPosted ? "Commented" : "Uploaded";
+      else if (job?.phase === "error") status = job.unrecoverableTagged ? "Unrecoverable" : "Packet Not Found";
+      
+      return [
+        p.packetCode,
+        p.requiredInitialTrn ? p.requiredInitialTrn : p.packetCode,
+        p.ticketNumber,
+        p.province,
+        p.proLptFolder,
+        status,
+        p.latestMatrixReply || ""
+      ];
+    });
+    
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["TRN", "Original TRN", "Ticket", "Province", "PRO/LPT", "Status", "Latest Reply"],
+      ...data
+    ]);
+    
+    const cols = [
+      { wch: 30 },
+      { wch: 30 },
+      { wch: 10 },
+      { wch: 20 },
+      { wch: 15 },
+      { wch: 15 },
+      { wch: 80 },
+    ];
+    ws["!cols"] = cols;
+    
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Backend Restoration");
+    XLSX.writeFile(wb, `Backend_Restoration_Packets_${new Date().toISOString().split('T')[0]}.xlsx`);
+  }
+
   function resetJob(key: string) {
     globalJobs.delete(key);
     notifyGlobalListeners();
@@ -402,12 +455,17 @@ export function AutomationClient() {
     return job?.phase === "success" && job.commentPosted === true;
   }).length;
   
+  const unrecoverablePacketsCount = restorePackets.filter(p => {
+    const job = jobs.get(p.id);
+    return job?.phase === "error" && job.unrecoverableTagged;
+  }).length;
+  
   const notFoundPacketsCount = restorePackets.filter(p => {
     const job = jobs.get(p.id);
-    return job?.phase === "error" && (job.error?.includes("not found") || p.restorationNotFound);
+    return job?.phase === "error" && !job.unrecoverableTagged && (job.error?.includes("not found") || p.restorationNotFound);
   }).length;
 
-  const pendingPacketsCount = restorePackets.length - completedPacketsCount - notFoundPacketsCount;
+  const pendingPacketsCount = restorePackets.length - completedPacketsCount - notFoundPacketsCount - unrecoverablePacketsCount;
 
   const pendingToRecoverCount = restorePackets.filter(p => {
     const job = jobs.get(p.id);
@@ -419,9 +477,29 @@ export function AutomationClient() {
     return job?.phase === "success" && !job.commentPosted;
   }).length;
 
+  const uniqueProvinces = Array.from(new Set(restorePackets.map(p => p.province).filter(Boolean))).sort();
+
   // ──────────────────────────────────────────────
   // Render
   // ──────────────────────────────────────────────
+
+  const displayPackets = restorePackets.filter(p => {
+    const job = jobs.get(p.id);
+    const isCompleted = job?.phase === "success" && job.commentPosted === true;
+    const isUnrecoverable = job?.phase === "error" && job.unrecoverableTagged;
+    const isNotFound = job?.phase === "error" && !isUnrecoverable && (job.error?.includes("not found") || p.restorationNotFound);
+    
+    if (filterProvince && p.province !== filterProvince) return false;
+
+    if (activeTab === "completed") return isCompleted;
+    if (activeTab === "not_found") return isNotFound;
+    if (activeTab === "unrecoverable") return isUnrecoverable;
+    return !isCompleted && !isNotFound && !isUnrecoverable; // Pending tab
+  }).sort((a, b) => {
+    if (sortBy === "trn_asc") return a.packetCode.localeCompare(b.packetCode);
+    if (sortBy === "trn_desc") return b.packetCode.localeCompare(a.packetCode);
+    return 0; // Default uses the original order from restorePackets
+  });
 
   return (
     <>
@@ -446,6 +524,10 @@ export function AutomationClient() {
             <button className="btn btn-primary" onClick={postAllPendingComments} disabled={isPostingAll || listLoading || pendingToPostCount === 0}>
               {isPostingAll ? <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> : <MessageSquare size={16} />}
               {isPostingAll ? "Posting..." : "Post All Comments"}
+            </button>
+            <button className="btn btn-secondary" onClick={() => exportToExcel(displayPackets)} disabled={listLoading || displayPackets.length === 0}>
+              <Download size={16} />
+              Export .xlsx
             </button>
             <button className="btn" onClick={loadRestorePackets} disabled={listLoading || isPostingAll || isRecoveringAll}>
               <RefreshCw size={16} />
@@ -509,6 +591,48 @@ export function AutomationClient() {
             No Packet Found
             <span style={{ background: activeTab === "not_found" ? "var(--danger-light, #fee2e2)" : "var(--border)", color: activeTab === "not_found" ? "var(--danger)" : "var(--muted)", padding: "2px 8px", borderRadius: 12, fontSize: "0.75rem", fontWeight: 600 }}>{notFoundPacketsCount}</span>
           </button>
+          <button 
+            onClick={() => setActiveTab("unrecoverable")}
+            style={{ 
+              padding: "8px 12px", 
+              background: "none", 
+              border: "none", 
+              borderBottom: activeTab === "unrecoverable" ? "2px solid #991b1b" : "2px solid transparent",
+              color: activeTab === "unrecoverable" ? "#991b1b" : "var(--muted)",
+              fontWeight: activeTab === "unrecoverable" ? 600 : 400,
+              cursor: "pointer",
+              display: "flex",
+              gap: 8,
+              alignItems: "center"
+            }}
+          >
+            Unrecoverable
+            <span style={{ background: activeTab === "unrecoverable" ? "#fef2f2" : "var(--border)", color: activeTab === "unrecoverable" ? "#991b1b" : "var(--muted)", padding: "2px 8px", borderRadius: 12, fontSize: "0.75rem", fontWeight: 600 }}>{unrecoverablePacketsCount}</span>
+          </button>
+        </div>
+
+        <div style={{ padding: "0 16px 16px", display: "flex", gap: 16, alignItems: "center", borderBottom: "1px solid var(--border)", marginBottom: 16 }}>
+          <select 
+            className="select" 
+            style={{ minWidth: 200 }}
+            value={filterProvince}
+            onChange={e => setFilterProvince(e.target.value)}
+          >
+            <option value="">All Provinces</option>
+            {uniqueProvinces.map(prov => (
+              <option key={prov} value={prov}>{prov}</option>
+            ))}
+          </select>
+          <select 
+            className="select"
+            style={{ minWidth: 200 }}
+            value={sortBy}
+            onChange={e => setSortBy(e.target.value as any)}
+          >
+            <option value="default">Default Sort (MisOr first)</option>
+            <option value="trn_asc">TRN (Ascending)</option>
+            <option value="trn_desc">TRN (Descending)</option>
+          </select>
         </div>
 
         {listLoading && (
@@ -525,17 +649,7 @@ export function AutomationClient() {
         )}
 
         {(() => {
-          const displayPackets = restorePackets.filter(p => {
-            const job = jobs.get(p.id);
-            const isCompleted = job?.phase === "success" && job.commentPosted === true;
-            const isNotFound = job?.phase === "error" && (job.error?.includes("not found") || p.restorationNotFound);
-            
-            if (activeTab === "completed") return isCompleted;
-            if (activeTab === "not_found") return isNotFound;
-            return !isCompleted && !isNotFound; // Pending tab
-          });
-
-          if (!listLoading && displayPackets.length === 0) {
+    if (!listLoading && displayPackets.length === 0) {
             return (
               <div style={{ padding: "20px 16px", color: "var(--muted)" }}>
                 No backend restoration packets found in this tab.

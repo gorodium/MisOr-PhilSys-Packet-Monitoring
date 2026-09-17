@@ -122,9 +122,26 @@ export async function POST(req: NextRequest) {
     }
 
     if (packetId) {
+      // If we are commenting Unrecoverable, add it to tags immediately to avoid waiting for sync
+      const isUnrecoverable = finalComment.toLowerCase().includes("unrecoverable") || finalComment.toLowerCase().includes("re-registration");
+      
+      const existingPacket = await prisma.packet.findUnique({
+        where: { id: packetId },
+        select: { matrixTags: true }
+      });
+      
+      let newTags = existingPacket?.matrixTags || [];
+      if (isUnrecoverable && !newTags.includes("unrecoverable")) {
+        newTags = [...newTags, "unrecoverable"];
+      }
+
       await prisma.packet.update({
         where: { id: packetId },
-        data: { restorationCommented: true }
+        data: { 
+          restorationCommented: true,
+          latestMatrixReply: finalComment,
+          matrixTags: newTags
+        }
       });
     }
 
