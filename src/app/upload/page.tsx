@@ -148,7 +148,7 @@ export default function UploadPage() {
       {/* Drag & Drop Area */}
       <div 
         style={{
-          border: \`2px dashed \${isDragging ? 'var(--primary)' : 'var(--border)'}\`,
+          border: `2px dashed ${isDragging ? 'var(--primary)' : 'var(--border)'}`,
           backgroundColor: isDragging ? 'rgba(59, 130, 246, 0.05)' : 'var(--surface)',
           borderRadius: "12px",
           padding: "48px 32px",
@@ -232,7 +232,7 @@ export default function UploadPage() {
                 }}
               >
                 <Play size={16} />
-                {uploadingCount > 0 ? 'Uploading...' : \`Start Upload (\${pendingCount})\`}
+                {uploadingCount > 0 ? 'Uploading...' : `Start Upload (${pendingCount})`}
               </button>
             </div>
           </div>
@@ -292,7 +292,7 @@ export default function UploadPage() {
                         style={{ 
                           height: "100%", 
                           backgroundColor: upload.status === 'error' ? '#ef4444' : upload.status === 'success' ? '#22c55e' : 'var(--primary)',
-                          width: \`\${upload.progress}%\`,
+                          width: `${upload.progress}%`,
                           transition: "width 0.3s ease, background-color 0.3s ease"
                         }}
                       />
@@ -349,10 +349,10 @@ export default function UploadPage() {
         </div>
       )}
       
-      <style dangerouslySetInnerHTML={{__html: \`
+      <style dangerouslySetInnerHTML={{__html: `
         .spin { animation: spin 1s linear infinite; }
         @keyframes spin { 100% { transform: rotate(360deg); } }
-      \`}} />
+      `}} />
     </div>
   );
 }
