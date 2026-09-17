@@ -1,15 +1,16 @@
 "use client";
 
-import { FileClock, LayoutDashboard, Settings, FilePlus, Menu, X, LogOut, LogIn, HardDriveDownload, UserCircle, Users } from "lucide-react";
+import { FileClock, LayoutDashboard, Settings, FilePlus, Menu, X, LogOut, LogIn, HardDriveDownload, UserCircle, Users, UploadCloud } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useState, useEffect } from "react";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/filing", label: "Matrix Filing", icon: FilePlus },
   { href: "/dashboard/requests", label: "Requests", icon: FileClock },
+  { href: "/upload", label: "Upload Packets", icon: UploadCloud },
   { href: "/dashboard/account", label: "My Account", icon: UserCircle },
   { href: "/automation", label: "Backend Restoration", icon: HardDriveDownload, adminOnly: true },
   { href: "/dashboard/users", label: "User Management", icon: Users, adminOnly: true },

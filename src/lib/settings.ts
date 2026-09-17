@@ -155,6 +155,14 @@ export const settingDefinitions: SettingDefinition[] = [
     envName: "BACKEND_RESTORATION_COMMENT_TEMPLATE",
     fallback: "{{packetCode}}\n\nPacket has been uploaded to\n\n{{destFolder}}/",
     type: "textarea"
+  },
+  {
+    key: "nasUploadBasePath",
+    label: "NAS Upload Base Path",
+    envName: "NAS_UPLOAD_BASE_PATH",
+    fallback: "/Misamis Oriental",
+    type: "text",
+    required: true
   }
 ];
 
@@ -173,6 +181,7 @@ export type ResolvedSettings = {
   autoTicketCreationEnabled: boolean;
   ticketBodyTemplate: string;
   backendRestorationCommentTemplate: string;
+  nasUploadBasePath: string;
 };
 
 function settingValueFromEnv(definition: SettingDefinition) {
@@ -290,7 +299,8 @@ export async function getResolvedSettings(): Promise<ResolvedSettings> {
       Number.isFinite(syncIntervalSeconds) && syncIntervalSeconds > 0 ? Math.floor(syncIntervalSeconds) : 300,
     autoTicketCreationEnabled: readBooleanLike(value("autoTicketCreationEnabled")),
     ticketBodyTemplate: value("ticketBodyTemplate") || DEFAULT_TICKET_TEMPLATE,
-    backendRestorationCommentTemplate: value("backendRestorationCommentTemplate") || "{{packetCode}}\n\nPacket has been uploaded to\n\n{{destFolder}}/"
+    backendRestorationCommentTemplate: value("backendRestorationCommentTemplate") || "{{packetCode}}\n\nPacket has been uploaded to\n\n{{destFolder}}/",
+    nasUploadBasePath: value("nasUploadBasePath") || "/Misamis Oriental"
   };
 }
 

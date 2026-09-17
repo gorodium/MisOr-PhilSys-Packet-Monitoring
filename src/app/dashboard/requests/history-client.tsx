@@ -253,17 +253,26 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
   }
 
   const [batchFiling, setBatchFiling] = useState(false);
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
+  const [batchConfirmRequests, setBatchConfirmRequests] = useState<FilingRequest[] | null>(null);
 
-  async function handleBatchFileUnclickable() {
+  function handleBatchFileUnclickable() {
     const unclickableRequests = requests.filter(req => req.status === "PENDING" && (req.remarks || "").toLowerCase().includes("unclickable"));
     
     if (unclickableRequests.length === 0) {
-      alert("No pending requests found with 'Unclickable' remarks.");
+      setErrorMessage("No pending requests found with 'Unclickable' remarks.");
       return;
     }
     
-    if (!confirm(`Are you sure you want to auto-file ${unclickableRequests.length} 'Unclickable' requests to Matrix? This process cannot be interrupted.`)) return;
+    setBatchConfirmRequests(unclickableRequests);
+  }
+
+  async function executeBatchFile() {
+    const unclickableRequests = batchConfirmRequests;
+    if (!unclickableRequests) return;
     
+    setBatchConfirmRequests(null);
+    setBatchProgress({ current: 0, total: unclickableRequests.length });
     setBatchFiling(true);
     let successCount = 0;
     
@@ -306,6 +315,7 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
       } catch (e) {
         console.error("Batch file error for req:", req.id, e);
       }
+      setBatchProgress(prev => ({ ...prev, current: prev.current + 1 }));
     }
     
     setBatchFiling(false);
@@ -478,16 +488,32 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
           <h1 className="page-title">Filing History</h1>
           <p className="page-kicker">Review past Matrix Filing requests</p>
         </div>
-        <div style={{ display: "flex", gap: "12px" }}>
-          <button 
-            onClick={handleBatchFileUnclickable}
-            className="btn btn-primary"
-            disabled={batchFiling}
-            style={{ display: "flex", gap: "8px", alignItems: "center" }}
-            title="Automatically file all pending requests marked as Unclickable"
-          >
-            {batchFiling ? "Filing..." : "File All Unclickable"}
-          </button>
+        <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+          {batchFiling ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px", minWidth: "180px", justifyContent: "center", background: "var(--surface)", padding: "4px 12px", borderRadius: "6px", border: "1px solid var(--border)" }}>
+              <div style={{ fontSize: "12px", color: "var(--muted)", display: "flex", justifyContent: "space-between", fontWeight: 500 }}>
+                <span>Filing requests...</span>
+                <span>{batchProgress.current} / {batchProgress.total}</span>
+              </div>
+              <div style={{ width: "100%", height: "6px", background: "var(--border)", borderRadius: "3px", overflow: "hidden" }}>
+                <div style={{ 
+                  height: "100%", 
+                  background: "var(--primary)", 
+                  width: `${batchProgress.total > 0 ? (batchProgress.current / batchProgress.total) * 100 : 0}%`,
+                  transition: "width 0.3s ease" 
+                }} />
+              </div>
+            </div>
+          ) : (
+            <button 
+              onClick={handleBatchFileUnclickable}
+              className="btn btn-primary"
+              style={{ display: "flex", gap: "8px", alignItems: "center" }}
+              title="Automatically file all pending requests marked as Unclickable"
+            >
+              File All Unclickable
+            </button>
+          )}
           <button 
             onClick={() => setIsExportModalOpen(true)}
             className="btn btn-secondary"
@@ -917,6 +943,37 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
             >
               Continue
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Filing Confirm Modal */}
+      {batchConfirmRequests && (
+        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.6)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px", backdropFilter: "blur(2px)" }}>
+          <div style={{ background: "var(--surface)", borderRadius: "12px", width: "100%", maxWidth: "450px", padding: "32px", textAlign: "center", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)" }}>
+            <div style={{ width: "64px", height: "64px", borderRadius: "50%", background: "var(--primary-light)", color: "var(--primary-dark)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
+              <Download size={32} />
+            </div>
+            <h2 style={{ fontSize: "20px", fontWeight: 700, margin: "0 0 12px 0", color: "var(--text)" }}>Batch File Unclickable</h2>
+            <p style={{ fontSize: "15px", color: "var(--muted)", margin: "0 0 24px 0", lineHeight: 1.5 }}>
+              Are you sure you want to auto-file <strong>{batchConfirmRequests.length}</strong> &apos;Unclickable&apos; requests to Matrix?<br/>This process cannot be interrupted.
+            </p>
+            <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+              <button 
+                onClick={() => setBatchConfirmRequests(null)}
+                className="btn btn-secondary"
+                style={{ flex: 1, minHeight: "44px", fontSize: "15px" }}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={executeBatchFile}
+                className="btn btn-primary"
+                style={{ flex: 1, minHeight: "44px", fontSize: "15px" }}
+              >
+                Yes, file them
+              </button>
+            </div>
           </div>
         </div>
       )}

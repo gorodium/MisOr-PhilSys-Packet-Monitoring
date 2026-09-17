@@ -41,6 +41,7 @@ export async function GET(request: NextRequest) {
     const status = parseStatus(query.status);
     const normalizedSearch = normalizePacketCode(query.search);
     const category = query.category && query.category !== "All" ? query.category : undefined;
+    const rawSearch = query.search ? query.search.replace(/[\s\-_/]/g, "").toUpperCase() : "";
 
     let matchingTrns: string[] = [];
     if (query.search && query.search.trim().length > 0) {
@@ -49,7 +50,8 @@ export async function GET(request: NextRequest) {
           OR: [
             { firstName: { contains: query.search, mode: "insensitive" } },
             { middleName: { contains: query.search, mode: "insensitive" } },
-            { lastName: { contains: query.search, mode: "insensitive" } }
+            { lastName: { contains: query.search, mode: "insensitive" } },
+            { trn: { contains: rawSearch, mode: "insensitive" } }
           ]
         },
         select: { trn: true }
@@ -74,9 +76,9 @@ export async function GET(request: NextRequest) {
       ...(query.search
         ? {
             OR: [
-              { normalizedPacketCode: { contains: normalizedSearch } },
+              { normalizedPacketCode: { contains: rawSearch } },
               { packetCode: { contains: query.search, mode: "insensitive" as const } },
-              ...(matchingTrns.length > 0 ? [{ packetCode: { in: matchingTrns } }] : [])
+              ...(matchingTrns.length > 0 ? [{ packetCode: { in: matchingTrns } }, { normalizedPacketCode: { in: matchingTrns.map(t => normalizePacketCode(t)) } }] : [])
             ]
           }
         : {})

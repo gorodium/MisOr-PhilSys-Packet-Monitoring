@@ -506,3 +506,74 @@ export async function copyPacketToDestination(
 
   throw new Error(`Failed to copy packet after ${maxRetries} attempts. Last error: ${(lastError as Error)?.message}`);
 }
+
+export async function uploadBufferToNas(
+  destHost: NasHost,
+  username: string,
+  destPassword: string,
+  buffer: Buffer,
+  destFolder: string,
+  fileName: string,
+  progressCallback?: (msg: string) => void
+): Promise<{ path: string }> {
+  const destPath = normalizePath(destFolder + '/' + fileName);
+  const partialPath = destPath + '.partial';
+
+  const maxRetries = 3;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    progressCallback?.(`Upload attempt ${attempt}/${maxRetries}...`);
+    let dstConn: Client | undefined;
+
+    try {
+      progressCallback?.(`Connecting to destination ${destHost.name}...`);
+      const dst = await createSftp(destHost, username, destPassword);
+      dstConn = dst.conn;
+
+      // Ensure destination folder exists
+      progressCallback?.(`Creating destination folder: ${destFolder}`);
+      await mkdirP(dst.sftp, destFolder);
+
+      // Remove any leftover partial file
+      await new Promise<void>((res) => dst.sftp.unlink(partialPath, () => res()));
+
+      progressCallback?.(`Uploading ${fileName} to ${destPath}...`);
+      
+      // Write buffer to partial file
+      await new Promise<void>((resolve, reject) => {
+        const writeStream = dst.sftp.createWriteStream(partialPath, { flags: 'w' });
+        writeStream.on('error', (err: Error) => reject(new Error(`Write error: ${err.message}`)));
+        writeStream.on('close', resolve);
+        writeStream.write(buffer);
+        writeStream.end();
+      });
+
+      // Atomic rename: .partial → final name
+      await new Promise<void>((resolve, reject) => {
+        dst.sftp.rename(partialPath, destPath, (err) =>
+          err ? reject(err) : resolve()
+        );
+      });
+
+      progressCallback?.(`✅ Uploaded to ${destPath}`);
+      return { path: destPath };
+    } catch (err) {
+      lastError = err;
+      progressCallback?.(`⚠️ Attempt ${attempt} failed: ${(err as Error).message}`);
+      if (dstConn) {
+        try {
+          await new Promise<void>((r) => {
+            const { sftp: dstSftp } = { sftp: null as any };
+            dstConn!.sftp((_, s) => { if (s) s.unlink(partialPath, () => r()); else r(); });
+          });
+        } catch {}
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+    } finally {
+      try { dstConn?.end(); } catch {}
+    }
+  }
+
+  throw new Error(`Failed to upload packet after ${maxRetries} attempts. Last error: ${(lastError as Error)?.message}`);
+}
