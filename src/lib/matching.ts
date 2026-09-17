@@ -360,6 +360,11 @@ async function upsertPacketFromMatrix(
 ) {
   const normalized = normalizePacketCode(packetCode);
   
+  const existingPacket = await prisma.packet.findUnique({ where: { normalizedPacketCode: normalized } });
+  const existingTags = existingPacket?.matrixTags || [];
+  const newTags = extractTagsFromReplies(reply ? [reply] : []);
+  const mergedTags = Array.from(new Set([...existingTags, ...newTags]));
+  
   // Upsert the packet itself
   const packet = await prisma.packet.upsert({
     where: { normalizedPacketCode: normalized },
@@ -377,6 +382,7 @@ async function upsertPacketFromMatrix(
       latestMatrixReply: reply?.body || null,
       latestMatrixReplyAuthor: reply?.author || null,
       latestMatrixReplyDate: reply?.createdAt || null,
+      matrixTags: mergedTags,
       lastCheckedAt: new Date()
     },
     update: {
@@ -388,6 +394,7 @@ async function upsertPacketFromMatrix(
       latestMatrixReply: reply?.body || null,
       latestMatrixReplyAuthor: reply?.author || null,
       latestMatrixReplyDate: reply?.createdAt || null,
+      matrixTags: mergedTags,
       lastCheckedAt: new Date()
     }
   });
