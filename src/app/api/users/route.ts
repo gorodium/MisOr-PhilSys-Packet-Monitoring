@@ -71,3 +71,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Failed to create user" }, { status: 500 });
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  const adminError = await requireAdminApi();
+  if (adminError) return adminError;
+
+  try {
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get("id");
+
+    if (!userId) {
+      return NextResponse.json({ success: false, error: "Missing user ID" }, { status: 400 });
+    }
+    
+    await prisma.user.delete({
+      where: { id: userId }
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: "Failed to delete user" }, { status: 500 });
+  }
+}

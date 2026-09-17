@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { UserPlus, KeyRound, Check, RefreshCw } from "lucide-react";
+import { UserPlus, KeyRound, Check, RefreshCw, Trash2 } from "lucide-react";
 
 export default function UsersPage() {
   const [users, setUsers] = useState<any[]>([]);
@@ -57,6 +57,27 @@ export default function UsersPage() {
       setError("An error occurred while creating user");
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleDeleteUser = async (id: string, username: string) => {
+    if (!confirm(`Are you sure you want to completely remove the user "${username}"? This action cannot be undone.`)) {
+      return;
+    }
+    
+    try {
+      const res = await fetch(`/api/users?id=${id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      
+      if (res.ok && data.success) {
+        fetchUsers();
+      } else {
+        setError(data.error || "Failed to delete user");
+      }
+    } catch (err) {
+      setError("An error occurred while deleting user");
     }
   };
 
@@ -168,6 +189,7 @@ export default function UsersPage() {
               <th style={{ padding: "0.75rem 0.5rem", color: "var(--muted)", fontWeight: "500" }}>Requests Filed</th>
               <th style={{ padding: "0.75rem 0.5rem", color: "var(--muted)", fontWeight: "500" }}>Created</th>
               <th style={{ padding: "0.75rem 0.5rem", color: "var(--muted)", fontWeight: "500" }}>Status</th>
+              <th style={{ padding: "0.75rem 0.5rem", color: "var(--muted)", fontWeight: "500", textAlign: "right" }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -185,7 +207,7 @@ export default function UsersPage() {
                     {user.role}
                   </span>
                 </td>
-                <td style={{ padding: "0.75rem 0.5rem" }}>{user._count.filingRequests}</td>
+                <td style={{ padding: "0.75rem 0.5rem" }}>{user._count?.filingRequests || 0}</td>
                 <td style={{ padding: "0.75rem 0.5rem", fontSize: "0.9rem", color: "var(--muted)" }}>{new Date(user.createdAt).toLocaleDateString()}</td>
                 <td style={{ padding: "0.75rem 0.5rem" }}>
                   {user.forcePasswordChange ? (
@@ -197,6 +219,15 @@ export default function UsersPage() {
                       <Check size={14} /> Active
                     </span>
                   )}
+                </td>
+                <td style={{ padding: "0.75rem 0.5rem", textAlign: "right" }}>
+                  <button 
+                    onClick={() => handleDeleteUser(user.id, user.username)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)" }}
+                    title="Remove User"
+                  >
+                    <Trash2 size={16} />
+                  </button>
                 </td>
               </tr>
             ))}

@@ -16,6 +16,7 @@ type RestorePacket = {
   proLptFolder: string;
   province: string;
   requiredInitialTrn: string | null;
+  restorationNotFound: boolean;
 };
 
 type StepLine = { text: string; type: "info" | "ok" | "error" | "warn" };
@@ -93,7 +94,7 @@ export function AutomationClient() {
   const [isRecoveringAll, setIsRecoveringAll] = useState(globalIsRecoveringAll);
   const [isPostingAll, setIsPostingAll] = useState(globalIsPostingAll);
   const [commentingFor, setCommentingFor] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<"pending" | "completed">("pending");
+  const [activeTab, setActiveTab] = useState<"pending" | "completed" | "not_found">("pending");
   const [confirmDialog, setConfirmDialog] = useState<{ title: string; message: string; onConfirm: () => void; onCancel: () => void } | null>(null);
 
   useEffect(() => {
@@ -128,6 +129,7 @@ export function AutomationClient() {
           proLptFolder: p.proLptFolder ?? "",
           province: p.province ?? "",
           requiredInitialTrn: p.requiredInitialTrn ?? null,
+          restorationNotFound: p.restorationNotFound ?? false,
         });
 
         if (p.restorationUploaded || p.restorationCommented) {
@@ -141,6 +143,12 @@ export function AutomationClient() {
             alreadyUploaded: true,
             commentPosted: p.restorationCommented === true,
             isRestored: true,
+          });
+        } else if (p.restorationNotFound) {
+          newJobs.set(p.id, {
+            phase: "error",
+            steps: [{ text: "❌ Packet not found on any NAS.", type: "error" }],
+            error: "Packet not found on any NAS.",
           });
         }
       });
@@ -163,9 +171,17 @@ export function AutomationClient() {
   
   async function recoverAllPendingPackets() {
     if (isRecoveringAll) return;
-    const pendingToRecover = restorePackets.filter(p => {
+    let pendingToRecover = restorePackets.filter(p => {
       const job = jobs.get(p.id);
       return !job || job.phase === "idle";
+    });
+
+    pendingToRecover.sort((a, b) => {
+      const aIsMisOr = (a.province || "").toLowerCase().includes("misamis oriental") || (a.proLptFolder || "").toLowerCase().includes("misamis oriental");
+      const bIsMisOr = (b.province || "").toLowerCase().includes("misamis oriental") || (b.proLptFolder || "").toLowerCase().includes("misamis oriental");
+      if (aIsMisOr && !bIsMisOr) return -1;
+      if (!aIsMisOr && bIsMisOr) return 1;
+      return 0;
     });
 
     if (pendingToRecover.length === 0) {
@@ -203,18 +219,25 @@ export function AutomationClient() {
 
     updateGlobalJobs(key, { phase: "searching" });
 
+    const TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes per packet
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
     try {
       const res = await fetch("/api/restore", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           packetId: packet.id,
           trn: packet.requiredInitialTrn || packet.packetCode,
           ticketId: packet.ticketId,
           ticketNumber: packet.ticketNumber,
           proLptFolder: packet.proLptFolder || undefined,
+          province: packet.province || undefined,
         }),
       });
+      clearTimeout(timeoutId);
       const payload = await res.json();
       const steps: StepLine[] = (payload.steps || []).map((s: string) => ({
         text: s,
@@ -222,7 +245,7 @@ export function AutomationClient() {
       }));
 
       if (payload.success) {
-        setJobs(prev => new Map(prev).set(key, {
+        updateGlobalJobs(key, {
           phase: "success",
           steps,
           uploadedTo: payload.uploadedTo ?? "",
@@ -230,20 +253,25 @@ export function AutomationClient() {
           packetName: payload.packetName ?? "",
           alreadyUploaded: payload.alreadyUploaded ?? false,
           commentPosted: false,
-        }));
+        });
       } else {
-        setJobs(prev => new Map(prev).set(key, {
+        updateGlobalJobs(key, {
           phase: "error",
           steps: steps.length > 0 ? steps : [{ text: `❌ ${payload.error || "Unknown error"}`, type: "error" }],
           error: payload.error || "Unknown error",
-        }));
+        });
       }
     } catch (err: any) {
-      setJobs(prev => new Map(prev).set(key, {
+      clearTimeout(timeoutId);
+      const isTimeout = err?.name === "AbortError";
+      const msg = isTimeout
+        ? "Search timed out after 3 minutes. The NAS may be slow or the packet is in an unexpected folder. Click Recover to retry."
+        : err?.message;
+      updateGlobalJobs(key, {
         phase: "error",
-        steps: [{ text: `❌ ${err?.message}`, type: "error" }],
-        error: err?.message,
-      }));
+        steps: [{ text: `❌ ${msg}`, type: "error" }],
+        error: msg,
+      });
     }
   }
 
@@ -335,7 +363,12 @@ export function AutomationClient() {
     return job?.phase === "success" && job.commentPosted === true;
   }).length;
   
-  const pendingPacketsCount = restorePackets.length - completedPacketsCount;
+  const notFoundPacketsCount = restorePackets.filter(p => {
+    const job = jobs.get(p.id);
+    return job?.phase === "error" && (job.error?.includes("not found") || p.restorationNotFound);
+  }).length;
+
+  const pendingPacketsCount = restorePackets.length - completedPacketsCount - notFoundPacketsCount;
 
   const pendingToRecoverCount = restorePackets.filter(p => {
     const job = jobs.get(p.id);
@@ -419,6 +452,24 @@ export function AutomationClient() {
             Completed
             <span style={{ background: activeTab === "completed" ? "var(--primary-light)" : "var(--border)", color: activeTab === "completed" ? "var(--primary-dark)" : "var(--muted)", padding: "2px 8px", borderRadius: 12, fontSize: "0.75rem", fontWeight: 600 }}>{completedPacketsCount}</span>
           </button>
+          <button 
+            onClick={() => setActiveTab("not_found")}
+            style={{ 
+              padding: "8px 12px", 
+              background: "none", 
+              border: "none", 
+              borderBottom: activeTab === "not_found" ? "2px solid var(--danger)" : "2px solid transparent",
+              color: activeTab === "not_found" ? "var(--danger)" : "var(--muted)",
+              fontWeight: activeTab === "not_found" ? 600 : 400,
+              cursor: "pointer",
+              display: "flex",
+              gap: 8,
+              alignItems: "center"
+            }}
+          >
+            No Packet Found
+            <span style={{ background: activeTab === "not_found" ? "var(--danger-light, #fee2e2)" : "var(--border)", color: activeTab === "not_found" ? "var(--danger)" : "var(--muted)", padding: "2px 8px", borderRadius: 12, fontSize: "0.75rem", fontWeight: 600 }}>{notFoundPacketsCount}</span>
+          </button>
         </div>
 
         {listLoading && (
@@ -438,7 +489,11 @@ export function AutomationClient() {
           const displayPackets = restorePackets.filter(p => {
             const job = jobs.get(p.id);
             const isCompleted = job?.phase === "success" && job.commentPosted === true;
-            return activeTab === "completed" ? isCompleted : !isCompleted;
+            const isNotFound = job?.phase === "error" && (job.error?.includes("not found") || p.restorationNotFound);
+            
+            if (activeTab === "completed") return isCompleted;
+            if (activeTab === "not_found") return isNotFound;
+            return !isCompleted && !isNotFound; // Pending tab
           });
 
           if (!listLoading && displayPackets.length === 0) {

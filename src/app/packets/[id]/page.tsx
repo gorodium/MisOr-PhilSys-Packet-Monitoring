@@ -40,7 +40,12 @@ export default async function PacketDetailPage({ params }: { params: Promise<{ i
 
   // Fetch any filing request for this TRN
   const filingRequest = await prisma.matrixFilingRequest.findFirst({
-    where: { trn: packet.normalizedPacketCode },
+    where: { 
+      OR: [
+        { trn: packet.normalizedPacketCode },
+        { trn: packet.packetCode }
+      ]
+    },
     orderBy: { createdAt: "desc" }
   });
 
@@ -138,7 +143,11 @@ export default async function PacketDetailPage({ params }: { params: Promise<{ i
           </div>
           <div style={{ padding: "16px", overflowY: "auto", flexGrow: 1, display: "flex", flexDirection: "column", gap: "24px" }}>
             {(() => {
-              const uniqueTickets = Array.from(new Map(packet.matches.map(m => [m.matrixTicket.id, m.matrixTicket])).values());
+              const matchedTickets = packet.matches.map(m => m.matrixTicket);
+              if (packet.matrixTicket) {
+                matchedTickets.push(packet.matrixTicket);
+              }
+              const uniqueTickets = Array.from(new Map(matchedTickets.map(t => [t.id, t])).values());
               if (uniqueTickets.length === 0) {
                 return <span className="muted">No matches recorded.</span>;
               }

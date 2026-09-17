@@ -4,6 +4,8 @@ import { demoSheetRows } from "../src/lib/demo-data";
 import { syncMatrixMatches } from "../src/lib/matching";
 import { normalizePacketCode } from "../src/lib/packet-normalizer";
 
+import bcrypt from "bcryptjs";
+
 const prisma = new PrismaClient();
 
 const defaultSettings = [
@@ -21,6 +23,20 @@ const defaultSettings = [
 ];
 
 async function main() {
+  // Create default admin user if none exists
+  const adminCount = await prisma.user.count({ where: { role: "ADMIN" } });
+  if (adminCount === 0) {
+    const passwordHash = await bcrypt.hash("admin", 10);
+    await prisma.user.create({
+      data: {
+        username: "admin",
+        passwordHash,
+        role: "ADMIN",
+        forcePasswordChange: true
+      }
+    });
+    console.log("Created default admin user (username: admin, password: admin)");
+  }
   for (const [key, value] of defaultSettings) {
     await prisma.appSetting.upsert({
       where: { key },

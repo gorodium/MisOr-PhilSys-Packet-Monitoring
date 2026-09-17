@@ -252,6 +252,67 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
     setSelectedReq(null);
   }
 
+  const [batchFiling, setBatchFiling] = useState(false);
+
+  async function handleBatchFileUnclickable() {
+    const unclickableRequests = requests.filter(req => req.status === "PENDING" && (req.remarks || "").toLowerCase().includes("unclickable"));
+    
+    if (unclickableRequests.length === 0) {
+      alert("No pending requests found with 'Unclickable' remarks.");
+      return;
+    }
+    
+    if (!confirm(`Are you sure you want to auto-file ${unclickableRequests.length} 'Unclickable' requests to Matrix? This process cannot be interrupted.`)) return;
+    
+    setBatchFiling(true);
+    let successCount = 0;
+    
+    for (const req of unclickableRequests) {
+      const defaultTrackerName = req.actionType === "Updating" ? "Updating Concerns" : "ePhilID TRN Concerns";
+      const foundTracker = trackersList.find(t => t.name === defaultTrackerName);
+      const reqTrackerId = foundTracker ? foundTracker.id : (trackersList[0]?.id || "");
+      
+      const reqSubject = `ePhilID TRN Concerns - Misamis Oriental`;
+      const reqDescription = `TRN: ${req.trn}\n\nDescribe the TRN issue/s: ${req.remarks}`;
+      
+      const reqStatusId = 1;
+      const reqPriorityId = 2;
+      
+      const aaron = assigneesList.find(a => a.name.toLowerCase().includes("aaron"));
+      const reqAssigneeId = aaron ? aaron.id : undefined;
+      const reqCategoryName = "With PSN";
+      
+      const today = new Date();
+      const reqStartDate = formatDate(today);
+      const reqDueDate = formatDate(getNextWorkday(today));
+      
+      try {
+        const res = await fetch(`/api/filing/${req.id}/matrix`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            trackerId: reqTrackerId || undefined,
+            title: reqSubject,
+            body: reqDescription,
+            statusId: reqStatusId,
+            priorityId: reqPriorityId,
+            assigneeId: reqAssigneeId,
+            categoryName: reqCategoryName,
+            startDate: reqStartDate,
+            dueDate: reqDueDate,
+          })
+        });
+        if (res.ok) successCount++;
+      } catch (e) {
+        console.error("Batch file error for req:", req.id, e);
+      }
+    }
+    
+    setBatchFiling(false);
+    fetchRequests();
+    setSuccessMessage(`Batch filing complete! Successfully filed ${successCount} out of ${unclickableRequests.length} requests.`);
+  }
+
   async function handleFileToMatrix(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedReq) return;
@@ -363,6 +424,8 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
 
   const [activeTab, setActiveTab] = useState<"pending" | "filed">("pending");
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filerFilter, setFilerFilter] = useState("");
 
   const pendingRequests = requests.filter(r => r.status !== "FILED");
   const filedRequests = requests.filter(r => r.status === "FILED");
@@ -384,7 +447,24 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
     if (d >= startOfMonth) filedMonth++;
   });
 
-  const displayRequests = activeTab === "pending" ? pendingRequests : filedRequests;
+  let displayRequests = activeTab === "pending" ? pendingRequests : filedRequests;
+  
+  if (searchQuery) {
+    const lowerQ = searchQuery.toLowerCase();
+    displayRequests = displayRequests.filter(r => 
+      (r.trn && r.trn.toLowerCase().includes(lowerQ)) || 
+      (r.remarks && r.remarks.toLowerCase().includes(lowerQ)) ||
+      (r.firstName && r.firstName.toLowerCase().includes(lowerQ)) ||
+      (r.lastName && r.lastName.toLowerCase().includes(lowerQ))
+    );
+  }
+
+  if (filerFilter) {
+    displayRequests = displayRequests.filter(r => (r.user?.username || "Unknown") === filerFilter);
+  }
+
+  const uniqueFilers = Array.from(new Set(requests.map(r => r.user?.username || "Unknown"))).sort();
+
   const sortedDisplayRequests = [...displayRequests].sort((a, b) => {
     const dateA = new Date(activeTab === "filed" ? a.updatedAt : a.createdAt).getTime();
     const dateB = new Date(activeTab === "filed" ? b.updatedAt : b.createdAt).getTime();
@@ -398,13 +478,24 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
           <h1 className="page-title">Filing History</h1>
           <p className="page-kicker">Review past Matrix Filing requests</p>
         </div>
-        <button 
-          onClick={() => setIsExportModalOpen(true)}
-          className="btn btn-secondary"
-          style={{ display: "flex", gap: "8px", alignItems: "center" }}
-        >
-          <Download size={16} /> Export CSV
-        </button>
+        <div style={{ display: "flex", gap: "12px" }}>
+          <button 
+            onClick={handleBatchFileUnclickable}
+            className="btn btn-primary"
+            disabled={batchFiling}
+            style={{ display: "flex", gap: "8px", alignItems: "center" }}
+            title="Automatically file all pending requests marked as Unclickable"
+          >
+            {batchFiling ? "Filing..." : "File All Unclickable"}
+          </button>
+          <button 
+            onClick={() => setIsExportModalOpen(true)}
+            className="btn btn-secondary"
+            style={{ display: "flex", gap: "8px", alignItems: "center" }}
+          >
+            <Download size={16} /> Export CSV
+          </button>
+        </div>
       </header>
 
       <section aria-label="Filing stats" style={{ display: "flex", justifyContent: "center", gap: "16px", marginBottom: "24px", flexWrap: "wrap" }}>
@@ -451,7 +542,26 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
             Filed ({filedRequests.length})
           </button>
         </div>
-        <div style={{ paddingBottom: "8px" }}>
+        <div style={{ display: "flex", gap: "12px", paddingBottom: "8px", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <input 
+            type="text" 
+            className="input" 
+            placeholder="Search TRN, name, remarks..." 
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            style={{ fontSize: "13px", padding: "4px 8px", minHeight: "unset", width: "200px" }}
+          />
+          <select 
+            className="select" 
+            value={filerFilter} 
+            onChange={(e) => setFilerFilter(e.target.value)}
+            style={{ fontSize: "13px", padding: "4px 8px", minHeight: "unset" }}
+          >
+            <option value="">All Filers</option>
+            {uniqueFilers.map(f => (
+              <option key={f} value={f}>{f}</option>
+            ))}
+          </select>
           <select 
             className="select" 
             value={sortOrder} 
@@ -474,9 +584,10 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)", fontSize: "0.85rem", color: "var(--muted)" }}>
                 <th>Date</th>
-                <th>TRN</th>
-                <th>Tracker</th>
-                <th>Status</th>
+                <th style={{ textAlign: "center" }}>Filed By</th>
+                <th style={{ paddingRight: "3rem" }}>TRN</th>
+                <th style={{ textAlign: "center", paddingLeft: "3rem" }}>Tracker</th>
+                <th style={{ textAlign: "center" }}>Status</th>
                 <th style={{ textAlign: "right" }}>Actions</th>
               </tr>
             </thead>
@@ -486,8 +597,9 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
                 return (
                 <tr key={req.id} style={{ borderBottom: "1px solid var(--border)", fontSize: "0.9rem" }}>
                   <td style={{ verticalAlign: "middle" }}>{displayDate.toLocaleDateString()} {displayDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
-                  <td style={{ fontFamily: "monospace", verticalAlign: "middle" }}>{req.trn}</td>
-                  <td style={{ verticalAlign: "middle" }}>
+                  <td style={{ verticalAlign: "middle", textAlign: "center" }}>{req.user?.username || "Unknown"}</td>
+                  <td style={{ fontFamily: "monospace", verticalAlign: "middle", paddingRight: "3rem" }}>{req.trn}</td>
+                  <td style={{ verticalAlign: "middle", textAlign: "center", paddingLeft: "3rem" }}>
                     <span style={{ 
                       padding: "0.15rem 0.4rem", 
                       borderRadius: "4px", 
@@ -499,17 +611,17 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
                       {req.actionType}
                     </span>
                   </td>
-                  <td style={{ verticalAlign: "middle" }}>
+                  <td style={{ verticalAlign: "middle", textAlign: "center" }}>
                     {req.status === "FILED" ? (
-                      <span style={{ color: "var(--success)", display: "flex", alignItems: "center", gap: "0.25rem", width: "fit-content" }} title={req.matrixTicketId || ""}>
+                      <span style={{ color: "var(--success)", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "0.25rem" }} title={req.matrixTicketId || ""}>
                         <CheckCircle size={14} /> Filed
                       </span>
                     ) : req.status === "PENDING" ? (
-                      <span style={{ color: "var(--warning)", display: "flex", alignItems: "center", gap: "0.25rem", width: "fit-content" }}>
+                      <span style={{ color: "var(--warning)", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "0.25rem" }}>
                         <Clock size={14} /> Pending
                       </span>
                     ) : (
-                      <span style={{ color: "var(--danger)", display: "flex", alignItems: "center", gap: "0.25rem", width: "fit-content" }}>
+                      <span style={{ color: "var(--danger)", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "0.25rem" }}>
                         <XCircle size={14} /> Error
                       </span>
                     )}

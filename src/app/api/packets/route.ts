@@ -42,6 +42,21 @@ export async function GET(request: NextRequest) {
     const normalizedSearch = normalizePacketCode(query.search);
     const category = query.category && query.category !== "All" ? query.category : undefined;
 
+    let matchingTrns: string[] = [];
+    if (query.search && query.search.trim().length > 0) {
+      const matchingReqs = await prisma.matrixFilingRequest.findMany({
+        where: {
+          OR: [
+            { firstName: { contains: query.search, mode: "insensitive" } },
+            { middleName: { contains: query.search, mode: "insensitive" } },
+            { lastName: { contains: query.search, mode: "insensitive" } }
+          ]
+        },
+        select: { trn: true }
+      });
+      matchingTrns = matchingReqs.map(r => r.trn);
+    }
+
     const where = {
       ...(status ? { syncStatus: status } : {}),
       ...(query.status === "for_backend_restoration"
@@ -56,11 +71,12 @@ export async function GET(request: NextRequest) {
           }
         : {}),
       ...(category ? { issueCategory: category } : {}),
-      ...(normalizedSearch
+      ...(query.search
         ? {
             OR: [
               { normalizedPacketCode: { contains: normalizedSearch } },
-              { packetCode: { contains: query.search ?? "", mode: "insensitive" as const } }
+              { packetCode: { contains: query.search, mode: "insensitive" as const } },
+              ...(matchingTrns.length > 0 ? [{ packetCode: { in: matchingTrns } }] : [])
             ]
           }
         : {})

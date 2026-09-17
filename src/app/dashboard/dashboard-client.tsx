@@ -328,7 +328,7 @@ export function DashboardClient({ isAdmin = false }: { isAdmin?: boolean }) {
           className="input search-input"
           value={searchInput}
           onChange={(event) => handleSearchChange(event.target.value)}
-          placeholder="Search packet code"
+          placeholder="Search packet code or name"
           style={{ flex: "1", minWidth: "200px" }}
         />
         <select

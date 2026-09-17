@@ -29,7 +29,17 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingReq) {
-      return fail(`This TRN (${data.trn}) has already been filed in the system.`, 400);
+      return fail(`This TRN (${data.trn}) has already been requested in the system.`, 400);
+    }
+
+    const { normalizePacketCode } = await import("@/lib/packet-normalizer");
+    const normalizedTrn = normalizePacketCode(data.trn);
+    const existingPacket = await prisma.packet.findUnique({
+      where: { normalizedPacketCode: normalizedTrn }
+    });
+
+    if (existingPacket && (existingPacket.syncStatus === "FILED" || existingPacket.ticketNumber)) {
+      return fail(`This TRN (${data.trn}) is already filed in Matrix (Ticket #${existingPacket.ticketNumber || 'Unknown'}).`, 400);
     }
 
     try {

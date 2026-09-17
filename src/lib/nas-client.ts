@@ -181,26 +181,51 @@ async function findDirsByNames(
   const found = new Map<string, string[]>();
   if (targets.size === 0) return found;
 
-  // Step 1: Try direct path — root/PRO-LPT-XXXXX (O(1))
+  // Step 1: Try several direct path variations before doing full BFS
+  // NAS may have case differences, so we probe a few casing variants
   const remaining = new Map<string, string>();
   for (const [targetKey, targetName] of targets) {
-    const directPath = posixJoin(root, targetName);
-    progressCallback?.(`Checking direct path: ${directPath}`);
-    const attr = await statPath(sftp, directPath);
-    if (attr && isDir(attr)) {
-      found.set(targetName, [directPath]);
+    let foundPath: string | null = null;
+
+    // Try exact name first
+    for (const variant of [targetName, targetName.toUpperCase(), targetName.toLowerCase()]) {
+      const directPath = posixJoin(root, variant);
+      progressCallback?.(`Checking direct path: ${directPath}`);
+      const attr = await statPath(sftp, directPath);
+      if (attr && isDir(attr)) {
+        foundPath = directPath;
+        break;
+      }
+    }
+
+    if (foundPath) {
+      found.set(targetName, [foundPath]);
     } else {
-      remaining.set(targetKey, targetName);
+      // Also try checking siblings at the root level (one readdir)
+      const rootItems = await listDir(sftp, root);
+      for (const item of rootItems) {
+        if (item.filename.toLowerCase() === targetKey && item.attrs && isDir(item.attrs as Stats)) {
+          found.set(targetName, [posixJoin(root, item.filename)]);
+          foundPath = posixJoin(root, item.filename);
+          break;
+        }
+      }
+      if (!foundPath) {
+        remaining.set(targetKey, targetName);
+      }
     }
   }
 
   if (remaining.size === 0) return found;
 
-  // Step 2: BFS fallback — mirror of PAMANA find_dirs_by_names BFS
+  // Step 2: BFS fallback — capped at 200 directories to prevent runaway scans
+  let scannedCount = 0;
+  const MAX_SCAN_DIRS = 200;
   const queue: Array<[string, number]> = [[root, 0]];
-  while (queue.length > 0 && remaining.size > 0) {
+  while (queue.length > 0 && remaining.size > 0 && scannedCount < MAX_SCAN_DIRS) {
     const [currentDir, depth] = queue.shift()!;
-    progressCallback?.(`Scanning folder: ${currentDir}`);
+    scannedCount++;
+    progressCallback?.(`BFS Scanning [${scannedCount}/${MAX_SCAN_DIRS}]: ${currentDir}`);
 
     const items = await listDir(sftp, currentDir);
     for (const item of items) {
@@ -233,6 +258,10 @@ async function findDirsByNames(
     }
   }
 
+  if (remaining.size > 0 && scannedCount >= MAX_SCAN_DIRS) {
+    progressCallback?.(`⚠️ BFS scan limit reached (${MAX_SCAN_DIRS} dirs). Folder not found via BFS.`);
+  }
+
   return found;
 }
 
@@ -248,18 +277,25 @@ async function searchPacketsInFolder(
   nasName: string,
   nasHost: string,
   maxResults: number = 5,
-  progressCallback?: (msg: string) => void
+  progressCallback?: (msg: string) => void,
+  maxDepth: number = 4
 ): Promise<PacketSearchResult[]> {
   const results: PacketSearchResult[] = [];
   const trnLower = trnDigits.toLowerCase();
+  let scannedDirs = 0;
+  const MAX_SCAN_DIRS = 300;
 
-  async function walk(dir: string) {
+  async function walk(dir: string, depth: number) {
     if (results.length >= maxResults) return;
-    progressCallback?.(`Scanning: ${dir}`);
+    if (scannedDirs >= MAX_SCAN_DIRS) return;
+    if (depth > maxDepth) return;
+    scannedDirs++;
+    progressCallback?.(`Scanning [${scannedDirs}/${MAX_SCAN_DIRS}]: ${dir}`);
     const items = await listDir(sftp, dir);
 
     for (const item of items) {
       if (results.length >= maxResults) break;
+      if (scannedDirs >= MAX_SCAN_DIRS) break;
       const itemPath = posixJoin(dir, item.filename);
       const attrs = item.attrs as Stats;
 
@@ -272,7 +308,7 @@ async function searchPacketsInFolder(
           item.filename.startsWith(".") ||
           SKIP_FOLDERS.has(nameLower)
         ) continue;
-        await walk(itemPath);
+        await walk(itemPath, depth + 1);
       } else if (isFile(attrs)) {
         // Match by stripping non-digits from filename, check if TRN digits are included
         const fileDigits = item.filename.replace(/\D/g, "");
@@ -292,7 +328,7 @@ async function searchPacketsInFolder(
     }
   }
 
-  await walk(folderPath);
+  await walk(folderPath, 0);
   return results;
 }
 
@@ -324,14 +360,17 @@ export async function searchPacketByMachineFolders(
         const results = await searchPacketsInFolder(sftp, folderPath, trnDigits, nasName, nasHost, 5, progressCallback);
         if (results.length > 0) return results;
       }
-      progressCallback?.(`Packet not found in ${proLptFolder}, trying BFS from root...`);
+      progressCallback?.(`Packet not found in ${proLptFolder}, stopping search on this NAS.`);
     } else {
-      progressCallback?.(`Folder ${proLptFolder} not found via direct/BFS, falling back to root BFS...`);
+      progressCallback?.(`Folder ${proLptFolder} not found on this NAS. Skipping.`);
     }
+    // If we had a proLptFolder hint but didn't find the packet, stop — don't do full BFS.
+    // Full BFS of the whole NAS would take 30+ minutes and is unlikely to help.
+    return [];
   }
 
-  // Fallback: BFS from root (same as PAMANA's search_packets with root="/")
-  progressCallback?.(`Doing full BFS search from ${root}...`);
+  // No proLptFolder hint — do a capped BFS search from root (max 200 dirs)
+  progressCallback?.(`No folder hint, doing capped BFS search from ${root}...`);
   return searchPacketsInFolder(sftp, root, trnDigits, nasName, nasHost, 5, progressCallback);
 }
 

@@ -34,18 +34,19 @@ async function postMatrixComment(baseUrl: string, apiKey: string, ticketId: stri
 
 // ──────────────────────────────────────────────────────────────────────
 // POST /api/restore
-// Body: { trn, ticketId, ticketNumber, proLptFolder? }
+// Body: { trn, ticketId, ticketNumber, proLptFolder?, province? }
 // ──────────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { packetId, trn, ticketId, ticketNumber, proLptFolder } = body as {
+    const { packetId, trn, ticketId, ticketNumber, proLptFolder, province } = body as {
       packetId?: string;
       trn: string;
       ticketId: string;
       ticketNumber: string;
       proLptFolder?: string;
+      province?: string;
     };
 
     if (!trn || !ticketId || !ticketNumber) {
@@ -82,8 +83,8 @@ export async function POST(req: NextRequest) {
       log(`\nTrying ${host.name} (${host.host})...`);
 
       try {
-        // Use "/Misamis Oriental" as search root — NAS folder structure starts there
-        const searchRoot = "/Misamis Oriental";
+        const isMisOr = (proLptFolder || "").toLowerCase().includes("misamis oriental") || (province || "").toLowerCase().includes("misamis oriental");
+        const searchRoot = isMisOr ? "/Misamis Oriental" : "/";
         const passwordToUse = host.name.includes("NAS2") ? nas2Password : nas1Password;
 
         const results = await searchPacketOnNas(
@@ -110,6 +111,12 @@ export async function POST(req: NextRequest) {
     }
 
     if (!foundResult || !foundOnHost) {
+      if (packetId) {
+        await prisma.packet.update({
+          where: { id: packetId },
+          data: { restorationNotFound: true },
+        });
+      }
       return ok({ success: false, steps, error: "Packet not found on any NAS." });
     }
 
@@ -145,7 +152,7 @@ export async function POST(req: NextRequest) {
     if (packetId) {
       await prisma.packet.update({
         where: { id: packetId },
-        data: { restorationUploaded: true },
+        data: { restorationUploaded: true, restorationNotFound: false },
       });
     }
 
