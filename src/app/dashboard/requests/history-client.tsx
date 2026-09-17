@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Clock, CheckCircle, XCircle, Send, X, RefreshCw, Trash2, Edit2, Save, Download } from "lucide-react";
+import * as XLSX from "xlsx";
 
 type FilingRequest = {
   id: string;
@@ -405,10 +406,10 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
     }
 
     const headers = ["Date Filed", "TRN", "Tracker", "Remarks", "First Name", "Last Name", "Filer (Username)", "Status"];
-      const rows = filtered.map(r => [
-        new Date(r.createdAt).toLocaleString(),
-        r.trn ? `\t${r.trn}` : "",
-        r.actionType || "",
+    const rows = filtered.map(r => [
+      new Date(r.createdAt).toLocaleString(),
+      r.trn || "", // no need for tab hack, xlsx will handle it if we set it as string
+      r.actionType || "",
       r.remarks || "",
       r.firstName || "",
       r.lastName || "",
@@ -416,19 +417,22 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
       r.status || ""
     ]);
     
-    const csvContent = [
-      headers.join(","),
-      ...rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""').replace(/\n/g, " ")}"`).join(","))
-    ].join("\n");
+    // Create worksheet
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", `TRN_Export_${exportRange}_${new Date().toISOString().split("T")[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // Auto size columns
+    const colWidths = headers.map((header, i) => {
+      const maxWidth = rows.reduce((max, row) => Math.max(max, String(row[i] || "").length), header.length);
+      return { wch: Math.min(maxWidth + 2, 50) }; // cap width at 50 chars
+    });
+    ws["!cols"] = colWidths;
+    
+    // Create workbook
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Requests");
+    
+    // Download
+    XLSX.writeFile(wb, `TRN_Export_${exportRange}_${new Date().toISOString().split("T")[0]}.xlsx`);
     setIsExportModalOpen(false);
   }
 
@@ -519,7 +523,7 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
             className="btn btn-secondary"
             style={{ display: "flex", gap: "8px", alignItems: "center" }}
           >
-            <Download size={16} /> Export CSV
+            <Download size={16} /> Export Excel
           </button>
         </div>
       </header>
@@ -917,7 +921,7 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
 
             <div style={{ padding: "16px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: "8px", background: "#f8fafc", borderBottomLeftRadius: "8px", borderBottomRightRadius: "8px" }}>
               <button type="submit" form="export-form" className="btn btn-primary" style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                <Download size={14} /> Download CSV
+                <Download size={14} /> Download Excel
               </button>
               <button type="button" className="btn" onClick={() => setIsExportModalOpen(false)}>Cancel</button>
             </div>
