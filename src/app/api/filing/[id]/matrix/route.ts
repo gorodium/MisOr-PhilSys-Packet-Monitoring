@@ -32,10 +32,12 @@ export async function POST(
     const { id } = await params;
     const body = await request.json();
     const data = matrixFilingSchema.parse(body);
+    console.log("Matrix Filing POST id:", JSON.stringify(id));
 
     const existingReq = await prisma.matrixFilingRequest.findUnique({
       where: { id }
     });
+    console.log("Found req?", !!existingReq);
 
     if (!existingReq) {
       return fail("Filing request not found", 404);

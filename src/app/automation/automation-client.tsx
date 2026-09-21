@@ -227,6 +227,41 @@ export function AutomationClient() {
   }
 
   // ── Recover (search + copy) ──
+  
+  // Retry all Not Found packets
+  async function retryAllNotFoundPackets() {
+    if (isRecoveringAll) return;
+    
+    let notFoundPackets = restorePackets.filter(p => {
+      const job = jobs.get(p.id);
+      const isUnrecoverable = job?.phase === "error" && job.unrecoverableTagged;
+      return job?.phase === "error" && !isUnrecoverable && (job.error?.includes("not found") || p.restorationNotFound);
+    });
+
+    if (notFoundPackets.length === 0) {
+      alert("No 'Not Found' packets to retry.");
+      return;
+    }
+
+    setConfirmDialog({
+      title: "Confirm Retry All",
+      message: `Are you sure you want to retry recovering ${notFoundPackets.length} packets that were not found? This may take some time.`,
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        globalIsRecoveringAll = true;
+        notifyGlobalListeners();
+        for (const packet of notFoundPackets) {
+          await runRestore(packet);
+          // Small delay
+          await new Promise(r => setTimeout(r, 1000));
+        }
+        globalIsRecoveringAll = false;
+        notifyGlobalListeners();
+      },
+      onCancel: () => setConfirmDialog(null)
+    });
+  }
+
   async function runRestore(packet: RestorePacket) {
     if (!packet.ticketId || !packet.ticketNumber) return;
     const key = packet.id;
@@ -517,7 +552,15 @@ export function AutomationClient() {
             Backend Restoration Packets
           </h2>
           <div style={{ display: "flex", gap: 10 }}>
+            
+            {activeTab === "not_found" && (
+              <button className="btn btn-primary" onClick={retryAllNotFoundPackets} disabled={isRecoveringAll || listLoading || notFoundPacketsCount === 0}>
+                {isRecoveringAll ? <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> : <RefreshCw size={16} />}
+                {isRecoveringAll ? "Retrying..." : "Retry All"}
+              </button>
+            )}
             <button className="btn btn-primary" onClick={recoverAllPendingPackets} disabled={isRecoveringAll || listLoading || pendingToRecoverCount === 0}>
+
               {isRecoveringAll ? <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> : <HardDriveDownload size={16} />}
               {isRecoveringAll ? "Recovering..." : "Recover All"}
             </button>

@@ -191,7 +191,8 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
     setSelectedReq(req);
     
     // Auto-select tracker based on actionType if we have trackers loaded
-    const defaultTrackerName = req.actionType === "Updating" ? "Updating Concerns" : "ePhilID TRN Concerns";
+    const isQR = ((req.remarks || "").toLowerCase().includes("qr") || (req.actionType || "").toLowerCase().includes("qr"));
+    const defaultTrackerName = isQR ? "ePhilID QR Concerns" : (req.actionType === "Updating" ? "Updating Concerns" : "ePhilID TRN Concerns");
     const foundTracker = trackersList.find(t => t.name === defaultTrackerName);
     setTrackerId(foundTracker ? foundTracker.id : (trackersList[0]?.id || ""));
     
@@ -255,30 +256,38 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
 
   const [batchFiling, setBatchFiling] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
-  const [batchConfirmRequests, setBatchConfirmRequests] = useState<FilingRequest[] | null>(null);
+  const [batchConfirm, setBatchConfirm] = useState<{ type: string, requests: FilingRequest[] } | null>(null);
 
   function handleBatchFileUnclickable() {
-    const unclickableRequests = requests.filter(req => req.status === "PENDING" && (req.remarks || "").toLowerCase().includes("unclickable"));
-    
+    const unclickableRequests = requests.filter(req => req.status === "PENDING" && ((req.remarks || "").toLowerCase().includes("unclickable") || (req.actionType || "").toLowerCase().includes("unclickable")));
     if (unclickableRequests.length === 0) {
       setErrorMessage("No pending requests found with 'Unclickable' remarks.");
       return;
     }
-    
-    setBatchConfirmRequests(unclickableRequests);
+    setBatchConfirm({ type: "Unclickable", requests: unclickableRequests });
+  }
+
+  function handleBatchFileStillInProgress() {
+    const sipRequests = requests.filter(req => req.status === "PENDING" && ((req.remarks || "").toLowerCase().includes("still in progress") || (req.actionType || "").toLowerCase().includes("still in progress")));
+    if (sipRequests.length === 0) {
+      setErrorMessage("No pending requests found with 'Still In Progress' status/remarks.");
+      return;
+    }
+    setBatchConfirm({ type: "Still In Progress", requests: sipRequests });
   }
 
   async function executeBatchFile() {
-    const unclickableRequests = batchConfirmRequests;
+    const unclickableRequests = batchConfirm?.requests;
     if (!unclickableRequests) return;
     
-    setBatchConfirmRequests(null);
+    setBatchConfirm(null);
     setBatchProgress({ current: 0, total: unclickableRequests.length });
     setBatchFiling(true);
     let successCount = 0;
     
     for (const req of unclickableRequests) {
-      const defaultTrackerName = req.actionType === "Updating" ? "Updating Concerns" : "ePhilID TRN Concerns";
+      const isQR = ((req.remarks || "").toLowerCase().includes("qr") || (req.actionType || "").toLowerCase().includes("qr"));
+      const defaultTrackerName = isQR ? "ePhilID QR Concerns" : (req.actionType === "Updating" ? "Updating Concerns" : "ePhilID TRN Concerns");
       const foundTracker = trackersList.find(t => t.name === defaultTrackerName);
       const reqTrackerId = foundTracker ? foundTracker.id : (trackersList[0]?.id || "");
       
@@ -301,21 +310,28 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            trackerId: reqTrackerId || undefined,
+            trackerId: reqTrackerId ? parseInt(reqTrackerId as string) : undefined,
             title: reqSubject,
             body: reqDescription,
             statusId: reqStatusId,
             priorityId: reqPriorityId,
-            assigneeId: reqAssigneeId,
+            assigneeId: reqAssigneeId ? parseInt(reqAssigneeId as any) : undefined,
             categoryName: reqCategoryName,
             startDate: reqStartDate,
             dueDate: reqDueDate,
           })
         });
-        if (res.ok) successCount++;
-      } catch (e) {
-        console.error("Batch file error for req:", req.id, e);
-      }
+        if (res.ok) {
+            successCount++;
+          } else {
+             const errText = await res.text();
+             console.error("Batch file error for req:", req.id, res.status, errText);
+          }
+        } catch (e) {
+          console.error("Batch file fetch exception for req:", req.id, e);
+        }
+        
+        await new Promise(r => setTimeout(r, 500));
       setBatchProgress(prev => ({ ...prev, current: prev.current + 1 }));
     }
     
@@ -509,14 +525,24 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
               </div>
             </div>
           ) : (
-            <button 
-              onClick={handleBatchFileUnclickable}
-              className="btn btn-primary"
-              style={{ display: "flex", gap: "8px", alignItems: "center" }}
-              title="Automatically file all pending requests marked as Unclickable"
-            >
-              File All Unclickable
-            </button>
+            <>
+                <button 
+                  onClick={handleBatchFileUnclickable}
+                  className="btn btn-primary"
+                  style={{ display: "flex", gap: "8px", alignItems: "center" }}
+                  title="Automatically file all pending requests marked as Unclickable"
+                >
+                  File All Unclickable
+                </button>
+                <button 
+                  onClick={handleBatchFileStillInProgress}
+                  className="btn btn-primary"
+                  style={{ display: "flex", gap: "8px", alignItems: "center" }}
+                  title="Automatically file all pending requests marked as Still In Progress"
+                >
+                  File All Still In Progress
+                </button>
+              </>
           )}
           <button 
             onClick={() => setIsExportModalOpen(true)}
@@ -828,7 +854,8 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
                   <label style={{ fontSize: "13px", fontWeight: 500 }}>Action Type</label>
                   <select className="select" value={editForm.actionType} onChange={e => setEditForm({...editForm, actionType: e.target.value})} required>
                     <option value="Updating">Updating</option>
-                    <option value="Not Updating">Not Updating</option>
+                    <option value="ePhilID TRN Concerns">ePhilID TRN Concerns</option>
+                    <option value="Photo and QR Concerns">Photo and QR Concerns</option>
                   </select>
                 </div>
                 
@@ -952,19 +979,19 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
       )}
 
       {/* Batch Filing Confirm Modal */}
-      {batchConfirmRequests && (
+      {batchConfirm && (
         <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.6)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px", backdropFilter: "blur(2px)" }}>
           <div style={{ background: "var(--surface)", borderRadius: "12px", width: "100%", maxWidth: "450px", padding: "32px", textAlign: "center", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)" }}>
             <div style={{ width: "64px", height: "64px", borderRadius: "50%", background: "var(--primary-light)", color: "var(--primary-dark)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
               <Download size={32} />
             </div>
-            <h2 style={{ fontSize: "20px", fontWeight: 700, margin: "0 0 12px 0", color: "var(--text)" }}>Batch File Unclickable</h2>
+            <h2 style={{ fontSize: "20px", fontWeight: 700, margin: "0 0 12px 0", color: "var(--text)" }}>{`Batch File ${batchConfirm.type}`}</h2>
             <p style={{ fontSize: "15px", color: "var(--muted)", margin: "0 0 24px 0", lineHeight: 1.5 }}>
-              Are you sure you want to auto-file <strong>{batchConfirmRequests.length}</strong> &apos;Unclickable&apos; requests to Matrix?<br/>This process cannot be interrupted.
+              Are you sure you want to auto-file <strong>{batchConfirm.requests.length}</strong> &apos;{batchConfirm.type}&apos; requests to Matrix?<br/>This process cannot be interrupted.
             </p>
             <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
               <button 
-                onClick={() => setBatchConfirmRequests(null)}
+                onClick={() => setBatchConfirm(null)}
                 className="btn btn-secondary"
                 style={{ flex: 1, minHeight: "44px", fontSize: "15px" }}
               >

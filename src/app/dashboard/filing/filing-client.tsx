@@ -157,7 +157,8 @@ export function FilingClient() {
                     required
                   >
                     <option value="Updating">Updating</option>
-                    <option value="Not Updating">Not Updating</option>
+                    <option value="ePhilID TRN Concerns">ePhilID TRN Concerns</option>
+                    <option value="Photo and QR Concerns">Photo and QR Concerns</option>
                   </select>
                 </div>
                 
