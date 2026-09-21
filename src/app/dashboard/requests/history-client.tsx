@@ -196,7 +196,7 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
     const foundTracker = trackersList.find(t => t.name === defaultTrackerName);
     setTrackerId(foundTracker ? foundTracker.id : (trackersList[0]?.id || ""));
     
-    setSubject(`ePhilID TRN Concerns - Misamis Oriental`);
+    setSubject(`${defaultTrackerName} - Misamis Oriental`);
     
     // We populate with the EXACT template the user requested previously.
     setDescription(`TRN: ${req.trn}\n\nDescribe the TRN issue/s: ${req.remarks}`);
@@ -291,7 +291,7 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
       const foundTracker = trackersList.find(t => t.name === defaultTrackerName);
       const reqTrackerId = foundTracker ? foundTracker.id : (trackersList[0]?.id || "");
       
-      const reqSubject = `ePhilID TRN Concerns - Misamis Oriental`;
+      const reqSubject = `${defaultTrackerName} - Misamis Oriental`;
       const reqDescription = `TRN: ${req.trn}\n\nDescribe the TRN issue/s: ${req.remarks}`;
       
       const reqStatusId = 1;
@@ -310,7 +310,7 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            trackerId: reqTrackerId ? parseInt(reqTrackerId as string) : undefined,
+            trackerId: reqTrackerId ? Number(reqTrackerId) : undefined,
             title: reqSubject,
             body: reqDescription,
             statusId: reqStatusId,
