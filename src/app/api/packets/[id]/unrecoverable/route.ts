@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { verifySession } from "@/lib/auth";
+import { writeActivity } from "@/lib/activity";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const session = await verifySession();
+    const actorName = session?.username || "System";
+
     const packetId = (await params).id;
     if (!packetId) {
       return NextResponse.json({ error: "Missing packet ID" }, { status: 400 });
@@ -10,7 +15,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const existingPacket = await prisma.packet.findUnique({
       where: { id: packetId },
-      select: { matrixTags: true }
+      select: { matrixTags: true, normalizedPacketCode: true }
     });
 
     let newTags = existingPacket?.matrixTags || [];
@@ -23,6 +28,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       data: {
         matrixTags: newTags
       }
+    });
+
+    await writeActivity({
+      type: "UNRECOVERABLE",
+      actor: actorName,
+      message: `${actorName} tagged packet ${existingPacket?.normalizedPacketCode} as Unrecoverable`,
+      metadata: { packetCode: existingPacket?.normalizedPacketCode, packetId }
     });
 
     return NextResponse.json({ success: true });

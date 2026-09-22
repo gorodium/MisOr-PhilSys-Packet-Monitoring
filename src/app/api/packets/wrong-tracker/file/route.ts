@@ -54,6 +54,16 @@ export async function POST(req: NextRequest) {
       dueDate: data.dueDate,
     });
 
+    const { verifySession } = await import("@/lib/auth");
+    const session = await verifySession();
+    const { writeActivity } = await import("@/lib/activity");
+    await writeActivity({
+      type: "REFILE",
+      actor: session?.username || "System",
+      message: `${session?.username || "System"} refiled packet ${packet.normalizedPacketCode} — Ticket #${ticket.ticketNumber}`,
+      metadata: { trn: packet.normalizedPacketCode, ticketNumber: ticket.ticketNumber, packetId: packet.id }
+    });
+
     return ok({ ticketNumber: ticket.ticketNumber, matrixTicketId: ticket.matrixTicketId });
   } catch (error) {
     return handleApiError(error);

@@ -2,6 +2,8 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { handleApiError, ok, fail } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
+import { verifySession } from "@/lib/auth";
+import { writeActivity } from "@/lib/activity";
 
 const matrixFilingSchema = z.object({
   trackerId: z.number().optional(),
@@ -29,13 +31,17 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await verifySession();
+    if (!session) return fail("Unauthorized", 401);
+
     const { id } = await params;
     const body = await request.json();
     const data = matrixFilingSchema.parse(body);
     console.log("Matrix Filing POST id:", JSON.stringify(id));
 
     const existingReq = await prisma.matrixFilingRequest.findUnique({
-      where: { id }
+      where: { id },
+      include: { user: true }
     });
     console.log("Found req?", !!existingReq);
 
@@ -77,6 +83,13 @@ export async function POST(
           status: "FILED",
           matrixTicketId: ticket.matrixTicketId
         }
+      });
+      
+      await writeActivity({
+        type: "TICKET_FILED",
+        actor: session.username,
+        message: `${session.username} filed ${existingReq.user?.username || 'user'}'s request to Matrix — Ticket #${ticket.ticketNumber}`,
+        metadata: { ticketNumber: ticket.ticketNumber, trn: existingReq.trn, requestId: existingReq.id }
       });
       
       return ok({ id, status: "FILED", ticketNumber: ticket.ticketNumber });

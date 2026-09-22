@@ -2,8 +2,8 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { handleApiError, ok, fail } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
-
 import { verifySession } from "@/lib/auth";
+import { writeActivity } from "@/lib/activity";
 
 const filingSchema = z.object({
   trn: z.string().length(29),
@@ -67,6 +67,13 @@ export async function POST(request: NextRequest) {
         status: "PENDING",
         userId: session.userId
       }
+    });
+
+    await writeActivity({
+      type: "FILING_REQUEST",
+      actor: session.username,
+      message: `${session.username} filed a request for ${data.actionType} — TRN ${data.trn}`,
+      metadata: { trn: data.trn, tracker: data.actionType, requestId: req.id }
     });
 
     return ok({ id: req.id, status: "PENDING", message: "Saved to DB. Matrix ticket must be filed manually." });

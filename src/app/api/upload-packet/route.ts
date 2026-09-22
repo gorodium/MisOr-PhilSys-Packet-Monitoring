@@ -63,6 +63,16 @@ export async function POST(req: NextRequest) {
       }
     });
 
+    const { verifySession } = await import("@/lib/auth");
+    const session = await verifySession();
+    const { writeActivity } = await import("@/lib/activity");
+    await writeActivity({
+      type: "MANUAL_UPLOAD",
+      actor: session?.username || "System",
+      message: `${session?.username || "System"} manually uploaded packet ${file.name} to NAS`,
+      metadata: { trn, filename: file.name, province }
+    });
+
     return NextResponse.json({ success: true, path: result.path });
   } catch (error: any) {
     console.error("Upload error:", error);

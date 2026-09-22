@@ -217,3 +217,15 @@ model UploadedPacket {
   @@index([province])
   @@index([createdAt])
 }
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  type      String
+  actor     String
+  message   String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([type])
+  @@index([createdAt])
+}

@@ -203,6 +203,20 @@ async function applyPacketMatches(packet: Packet, matches: TicketMatch[]) {
     }
   });
 
+  if (reply && reply.body && reply.author && reply.createdAt) {
+    const isNew = !packet.latestMatrixReplyDate || new Date(packet.latestMatrixReplyDate) < new Date(reply.createdAt);
+    if (isNew) {
+      const excerpt = reply.body.length > 50 ? reply.body.substring(0, 50) + "..." : reply.body;
+      const { writeActivity } = await import("@/lib/activity");
+      await writeActivity({
+        type: "MATRIX_REPLY",
+        actor: reply.author,
+        message: `${reply.author} replied to Ticket #${match.ticket.ticketNumber}: "${excerpt}"`,
+        metadata: { ticketNumber: match.ticket.ticketNumber, trn: packet.normalizedPacketCode }
+      });
+    }
+  }
+
   return { status: PacketSyncStatus.FILED, ticketCount: 1 };
 }
 

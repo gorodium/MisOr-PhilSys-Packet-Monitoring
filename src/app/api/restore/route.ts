@@ -4,6 +4,8 @@ import { getStoredSettings } from "@/lib/settings";
 import { searchPacketOnNas, copyPacketToDestination, PacketSearchResult } from "@/lib/nas-client";
 import { NAS_SEARCH_HOSTS, NAS_DESTINATION_HOST, NAS_DESTINATION_ROOT } from "@/lib/nas-config";
 import { prisma } from "@/lib/prisma";
+import { verifySession } from "@/lib/auth";
+import { writeActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 // Give up to 5 minutes — NAS searches can be slow
@@ -39,6 +41,9 @@ async function postMatrixComment(baseUrl: string, apiKey: string, ticketId: stri
 
 export async function POST(req: NextRequest) {
   try {
+    const session = await verifySession();
+    const actorName = session?.username || "System";
+
     const body = await req.json();
     const { packetId, trn, ticketId, ticketNumber, proLptFolder, province } = body as {
       packetId?: string;
@@ -154,6 +159,15 @@ export async function POST(req: NextRequest) {
         where: { id: packetId },
         data: { restorationUploaded: true, restorationNotFound: false },
       });
+      
+      if (!alreadyUploaded) {
+        await writeActivity({
+          type: "RESTORATION",
+          actor: actorName,
+          message: `${actorName} restored packet ${trn} to Backend Restoration NAS`,
+          metadata: { trn, ticketNumber, destFolder }
+        });
+      }
     }
 
     return ok({

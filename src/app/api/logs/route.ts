@@ -18,13 +18,24 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const [syncLogs, automationRuns, auditLogs] = await Promise.all([
-      prisma.syncLog.findMany({ orderBy: { startedAt: "desc" }, take: 100 }),
-      prisma.automationRun.findMany({ orderBy: { startedAt: "desc" }, take: 100 }),
-      prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 100 })
+    const url = new URL(request.url);
+    const type = url.searchParams.get("type");
+    const page = parseInt(url.searchParams.get("page") || "1", 10);
+    const pageSize = 50;
+    
+    const where = type && type !== "ALL" ? { type } : {};
+
+    const [activities, totalCount] = await Promise.all([
+      prisma.activityLog.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.activityLog.count({ where })
     ]);
 
-    return ok({ syncLogs, automationRuns, auditLogs });
+    return ok({ activities, totalCount, page, pageSize });
   } catch (error) {
     return handleApiError(error);
   }

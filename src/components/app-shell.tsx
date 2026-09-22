@@ -16,7 +16,7 @@ const navItems = [
   { href: "/automation", label: "Backend Restoration", icon: HardDriveDownload, adminOnly: true },
   { href: "/dashboard/users", label: "User Management", icon: Users, adminOnly: true },
   { href: "/settings", label: "Settings", icon: Settings, adminOnly: true },
-  { href: "/logs", label: "Logs", icon: FileClock, adminOnly: true }
+  { href: "/logs", label: "Activity Logs", icon: FileClock, adminOnly: true }
 ];
 
 export function AppShell({ children, isAdmin }: { children: ReactNode, isAdmin?: boolean }) {
