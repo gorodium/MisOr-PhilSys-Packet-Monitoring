@@ -16,8 +16,8 @@ export default function AccountPage() {
     try {
       const res = await fetch("/api/filing");
       const data = await res.json();
-      if (res.ok && data.success) {
-        setRequests(data.data); // ok() returns { success: true, data: ... }
+      if (res.ok) {
+        setRequests(data);
       } else {
         setError(data.error || "Failed to load requests");
       }
