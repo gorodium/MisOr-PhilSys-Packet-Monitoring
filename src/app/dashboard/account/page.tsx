@@ -14,7 +14,7 @@ export default function AccountPage() {
   
   const fetchMyRequests = async () => {
     try {
-      const res = await fetch("/api/filing");
+      const res = await fetch("/api/filing?scope=me");
       const data = await res.json();
       if (res.ok) {
         setRequests(data);

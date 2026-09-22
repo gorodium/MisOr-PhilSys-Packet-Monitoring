@@ -80,7 +80,12 @@ export async function GET(request: NextRequest) {
     const session = await verifySession();
     if (!session) return fail("Unauthorized", 401);
 
-    const where = session.role === "ADMIN" ? {} : { userId: session.userId };
+    const scope = request.nextUrl.searchParams.get("scope");
+    
+    // If scope=me is passed, or if the user is not an admin, only show their own requests.
+    const where = (session.role !== "ADMIN" || scope === "me") 
+      ? { userId: session.userId } 
+      : {};
 
     const requests = await prisma.matrixFilingRequest.findMany({
       where,
