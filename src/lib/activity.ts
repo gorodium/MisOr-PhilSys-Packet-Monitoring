@@ -21,7 +21,7 @@ export async function writeActivity(input: {
         type: input.type,
         actor: input.actor,
         message: input.message,
-        metadata: input.metadata ?? {},
+        metadata: (input.metadata ?? {}) as any,
       },
     });
   } catch (error) {
