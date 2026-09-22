@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getStoredSettings } from "@/lib/settings";
 import { NAS_DESTINATION_HOST } from "@/lib/nas-config";
 import { uploadBufferToNas } from "@/lib/nas-client";
-import { machineFolderForPacket } from "@/lib/packet-normalizer";
+import { machineFolderForPacket, machineProvinceForPacket } from "@/lib/packet-normalizer";
+import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,7 @@ export async function POST(req: NextRequest) {
     if (!proLpt) {
       return NextResponse.json({ success: false, error: `Could not determine PRO-LPT for TRN: ${trn}` }, { status: 400 });
     }
+    const province = machineProvinceForPacket(trn) || "Unknown";
 
     const stored = await getStoredSettings();
     const nasUsername = stored.get("nasUsername")?.value || process.env.NAS_USERNAME || "";
@@ -51,6 +53,15 @@ export async function POST(req: NextRequest) {
       destFolder,
       file.name
     );
+
+    await prisma.uploadedPacket.create({
+      data: {
+        trn,
+        filename: file.name,
+        nasPath: result.path || `${destFolder}/${file.name}`,
+        province
+      }
+    });
 
     return NextResponse.json({ success: true, path: result.path });
   } catch (error: any) {

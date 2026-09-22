@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useRef } from "react";
-import { UploadCloud, CheckCircle, XCircle, Loader2, FileArchive, Play, Trash2 } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { UploadCloud, CheckCircle, XCircle, Loader2, FileArchive, Play, Trash2, Calendar, MapPin, Database } from "lucide-react";
 
 type UploadStatus = "pending" | "uploading" | "success" | "error";
 
@@ -14,10 +14,47 @@ interface FileUpload {
   nasPath?: string;
 }
 
+interface UploadHistoryRecord {
+  id: string;
+  trn: string;
+  filename: string;
+  nasPath: string;
+  province: string;
+  createdAt: string;
+}
+
+interface KPICard {
+  province: string;
+  count: number;
+}
+
 export default function UploadPage() {
   const [uploads, setUploads] = useState<FileUpload[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [history, setHistory] = useState<UploadHistoryRecord[]>([]);
+  const [kpiCards, setKpiCards] = useState<KPICard[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+
+  const fetchHistory = async () => {
+    try {
+      const res = await fetch("/api/upload-history");
+      if (res.ok) {
+        const data = await res.json();
+        setHistory(data.history || []);
+        setKpiCards(data.kpiCards || []);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchHistory();
+  }, []);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -43,11 +80,11 @@ export default function UploadPage() {
     }
   };
 
-  const addFiles = (newFiles: File[]) => {
-    const zipFiles = newFiles.filter(f => f.name.toLowerCase().endsWith(".zip"));
+  const addFiles = (files: File[]) => {
+    const zipFiles = files.filter(f => f.name.toLowerCase().endsWith('.zip'));
     
-    if (zipFiles.length !== newFiles.length) {
-      alert("Only .zip files are allowed");
+    if (zipFiles.length < files.length) {
+      alert(`Ignored ${files.length - zipFiles.length} non-ZIP files.`);
     }
 
     const newUploads: FileUpload[] = zipFiles.map(file => ({
@@ -62,60 +99,59 @@ export default function UploadPage() {
 
   const uploadFile = async (uploadId: string, file: File) => {
     setUploads(prev => prev.map(u => u.id === uploadId ? { ...u, status: "uploading", progress: 0 } : u));
-
-    const formData = new FormData();
-    formData.append("file", file);
-
+    
     try {
+      const formData = new FormData();
+      formData.append("file", file);
+
       const xhr = new XMLHttpRequest();
       
       const promise = new Promise((resolve, reject) => {
-        xhr.upload.addEventListener("progress", (event) => {
-          if (event.lengthComputable) {
-            const progress = Math.round((event.loaded * 100) / event.total);
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const progress = Math.round((e.loaded / e.total) * 100);
             setUploads(prev => prev.map(u => u.id === uploadId ? { ...u, progress } : u));
           }
-        });
-
-        xhr.addEventListener("load", () => {
+        };
+        
+        xhr.onload = () => {
           if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              const res = JSON.parse(xhr.responseText);
-              if (res.success) resolve(res);
-              else reject(new Error(res.error || "Upload failed"));
-            } catch (e) {
-              reject(new Error("Invalid response from server"));
-            }
+            const res = JSON.parse(xhr.responseText);
+            if (res.success) resolve(res);
+            else reject(new Error(res.error || "Upload failed"));
           } else {
             try {
               const res = JSON.parse(xhr.responseText);
-              reject(new Error(res.error || `Server error: ${xhr.status}`));
+              reject(new Error(res.error || "Upload failed"));
             } catch (e) {
-              reject(new Error(`Server error: ${xhr.status}`));
+              reject(new Error("Upload failed"));
             }
           }
-        });
-
-        xhr.addEventListener("error", () => reject(new Error("Network error occurred")));
+        };
         
-        xhr.open("POST", "/api/upload-packet");
-        xhr.send(formData);
+        xhr.onerror = () => reject(new Error("Network error"));
       });
-
-      const result: any = await promise;
+      
+      xhr.open("POST", "/api/upload-packet");
+      xhr.send(formData);
+      
+      const response: any = await promise;
       
       setUploads(prev => prev.map(u => u.id === uploadId ? { 
         ...u, 
         status: "success", 
-        progress: 100, 
-        nasPath: result.path 
+        progress: 100,
+        nasPath: response.path 
       } : u));
 
-    } catch (err: any) {
+      // Refresh history silently
+      fetchHistory();
+      
+    } catch (error: any) {
       setUploads(prev => prev.map(u => u.id === uploadId ? { 
         ...u, 
         status: "error", 
-        message: err.message 
+        message: error.message 
       } : u));
     }
   };
@@ -133,34 +169,67 @@ export default function UploadPage() {
     setUploads(prev => prev.filter(u => u.status !== "success"));
   };
 
-  const pendingCount = uploads.filter(u => u.status === "pending").length;
+  const pendingCount = uploads.filter(u => u.status === "pending" || u.status === "error").length;
   const uploadingCount = uploads.filter(u => u.status === "uploading").length;
 
   return (
-    <div style={{ padding: "32px", maxWidth: "900px", margin: "0 auto", fontFamily: "inherit" }}>
-      <header style={{ marginBottom: "24px" }}>
-        <h1 style={{ fontSize: "24px", fontWeight: 700, margin: "0 0 8px 0", color: "var(--text)" }}>Upload Packets to NAS</h1>
-        <p style={{ color: "var(--muted)", margin: 0, fontSize: "14px", lineHeight: 1.5 }}>
-          Upload packet ZIP files to the NAS. The destination folder (PRO-LPT) will be automatically determined from the TRN in the filename.
-        </p>
-      </header>
+    <div style={{ padding: "32px", maxWidth: "1200px", margin: "0 auto" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "24px" }}>
+        <div>
+          <h1 style={{ fontSize: "24px", fontWeight: 700, margin: "0 0 8px 0", color: "var(--text)" }}>Upload Packets to NAS</h1>
+          <p style={{ color: "var(--muted)", margin: 0, fontSize: "14px" }}>
+            Upload packet ZIP files to the NAS. The destination folder (PRO-LPT) will be automatically determined from the TRN in the filename.
+          </p>
+        </div>
+      </div>
 
-      {/* Drag & Drop Area */}
+      {/* KPI Cards */}
+      {kpiCards.length > 0 && (
+        <div style={{ display: "flex", gap: "16px", marginBottom: "32px", flexWrap: "wrap" }}>
+          {kpiCards.map((kpi, idx) => (
+            <div key={idx} style={{
+              backgroundColor: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: "12px",
+              padding: "20px",
+              minWidth: "200px",
+              boxShadow: "var(--shadow-sm)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px"
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "var(--muted)", fontSize: "14px", fontWeight: 500 }}>
+                <MapPin size={16} /> {kpi.province}
+              </div>
+              <div style={{ fontSize: "28px", fontWeight: 700, color: "var(--text)" }}>
+                {kpi.count}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Dropzone */}
       <div 
-        style={{
-          border: `2px dashed ${isDragging ? 'var(--primary)' : 'var(--border)'}`,
-          backgroundColor: isDragging ? 'rgba(59, 130, 246, 0.05)' : 'var(--surface)',
-          borderRadius: "12px",
-          padding: "48px 32px",
-          textAlign: "center",
-          cursor: "pointer",
-          transition: "all 0.2s ease",
-          marginBottom: "32px"
-        }}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
+        style={{
+          border: `2px dashed ${isDragging ? 'var(--primary)' : 'var(--border)'}`,
+          backgroundColor: isDragging ? 'rgba(59, 130, 246, 0.05)' : 'var(--surface)',
+          borderRadius: "16px",
+          padding: "64px 32px",
+          textAlign: "center",
+          cursor: "pointer",
+          transition: "all 0.2s ease",
+          marginBottom: "32px",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: "240px"
+        }}
       >
         <UploadCloud 
           size={48} 
@@ -187,7 +256,7 @@ export default function UploadPage() {
         />
         <button 
           className="btn"
-          style={{ pointerEvents: "none" }} // button click is handled by the parent div
+          style={{ pointerEvents: "none" }}
         >
           Select Files
         </button>
@@ -200,7 +269,8 @@ export default function UploadPage() {
           border: "1px solid var(--border)", 
           borderRadius: "12px", 
           overflow: "hidden",
-          boxShadow: "var(--shadow)"
+          boxShadow: "var(--shadow)",
+          marginBottom: "32px"
         }}>
           <div style={{ 
             padding: "16px 20px", 
@@ -237,106 +307,37 @@ export default function UploadPage() {
             </div>
           </div>
           
-          <ul style={{ 
-            listStyle: "none", 
-            margin: 0, 
-            padding: 0, 
-            maxHeight: "60vh", 
-            overflowY: "auto" 
-          }}>
+          <ul style={{ listStyle: "none", margin: 0, padding: 0, maxHeight: "40vh", overflowY: "auto" }}>
             {uploads.map((upload, idx) => (
               <li key={upload.id} style={{ 
                 padding: "16px 20px", 
-                borderBottom: idx === uploads.length - 1 ? "none" : "1px solid var(--border)",
-                transition: "background-color 0.2s"
+                borderBottom: idx === uploads.length - 1 ? "none" : "1px solid var(--border)"
               }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-                  <div style={{ 
-                    padding: "10px", 
-                    backgroundColor: "rgba(59, 130, 246, 0.1)", 
-                    borderRadius: "8px", 
-                    color: "var(--primary)",
-                    flexShrink: 0
-                  }}>
+                  <div style={{ padding: "10px", backgroundColor: "rgba(59, 130, 246, 0.1)", borderRadius: "8px", color: "var(--primary)", flexShrink: 0 }}>
                     <FileArchive size={24} />
                   </div>
-                  
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
-                      <p style={{ 
-                        margin: 0, 
-                        fontSize: "14px", 
-                        fontWeight: 500, 
-                        color: "var(--text)", 
-                        whiteSpace: "nowrap", 
-                        overflow: "hidden", 
-                        textOverflow: "ellipsis" 
-                      }} title={upload.file.name}>
+                      <p style={{ margin: 0, fontSize: "14px", fontWeight: 500, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={upload.file.name}>
                         {upload.file.name}
                       </p>
                       <span style={{ fontSize: "12px", color: "var(--muted)", whiteSpace: "nowrap", marginLeft: "16px" }}>
                         {(upload.file.size / (1024 * 1024)).toFixed(2)} MB
                       </span>
                     </div>
-                    
-                    {/* Progress Bar */}
-                    <div style={{ 
-                      width: "100%", 
-                      backgroundColor: "var(--border)", 
-                      borderRadius: "4px", 
-                      height: "6px", 
-                      marginBottom: "6px", 
-                      overflow: "hidden" 
-                    }}>
-                      <div 
-                        style={{ 
-                          height: "100%", 
-                          backgroundColor: upload.status === 'error' ? '#ef4444' : upload.status === 'success' ? '#22c55e' : 'var(--primary)',
-                          width: `${upload.progress}%`,
-                          transition: "width 0.3s ease, background-color 0.3s ease"
-                        }}
-                      />
+                    <div style={{ width: "100%", backgroundColor: "var(--border)", borderRadius: "4px", height: "6px", marginBottom: "6px", overflow: "hidden" }}>
+                      <div style={{ height: "100%", backgroundColor: upload.status === 'error' ? '#ef4444' : upload.status === 'success' ? '#22c55e' : 'var(--primary)', width: `${upload.progress}%`, transition: "width 0.3s ease" }} />
                     </div>
-                    
-                    {/* Status Text */}
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                       <div style={{ display: "flex", alignItems: "center", fontSize: "12px", gap: "6px" }}>
                         {upload.status === 'pending' && <span style={{ color: "var(--muted)" }}>Ready to upload</span>}
-                        {upload.status === 'uploading' && (
-                          <span style={{ color: "var(--primary)", display: "flex", alignItems: "center", gap: "4px", fontWeight: 500 }}>
-                            <Loader2 size={12} className="spin" /> Uploading {upload.progress}%
-                          </span>
-                        )}
-                        {upload.status === 'success' && (
-                          <span style={{ color: "#16a34a", display: "flex", alignItems: "center", gap: "4px", fontWeight: 500 }}>
-                            <CheckCircle size={12} /> {upload.nasPath}
-                          </span>
-                        )}
-                        {upload.status === 'error' && (
-                          <span style={{ color: "#dc2626", display: "flex", alignItems: "center", gap: "4px", fontWeight: 500 }}>
-                            <XCircle size={12} /> {upload.message}
-                          </span>
-                        )}
+                        {upload.status === 'uploading' && <span style={{ color: "var(--primary)", display: "flex", alignItems: "center", gap: "4px", fontWeight: 500 }}><Loader2 size={12} className="spin" /> Uploading {upload.progress}%</span>}
+                        {upload.status === 'success' && <span style={{ color: "#16a34a", display: "flex", alignItems: "center", gap: "4px", fontWeight: 500 }}><CheckCircle size={12} /> {upload.nasPath}</span>}
+                        {upload.status === 'error' && <span style={{ color: "#dc2626", display: "flex", alignItems: "center", gap: "4px", fontWeight: 500 }}><XCircle size={12} /> {upload.message}</span>}
                       </div>
-                      
                       {upload.status !== 'uploading' && (
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeUpload(upload.id);
-                          }}
-                          style={{
-                            background: "transparent",
-                            border: "none",
-                            color: "var(--muted)",
-                            cursor: "pointer",
-                            padding: "4px",
-                            display: "flex",
-                            alignItems: "center",
-                            borderRadius: "4px"
-                          }}
-                          title="Remove from list"
-                        >
+                        <button onClick={(e) => { e.stopPropagation(); removeUpload(upload.id); }} style={{ background: "transparent", border: "none", color: "var(--muted)", cursor: "pointer", padding: "4px" }}>
                           <Trash2 size={14} />
                         </button>
                       )}
@@ -348,6 +349,78 @@ export default function UploadPage() {
           </ul>
         </div>
       )}
+
+      {/* Upload History Table */}
+      <div style={{ 
+        backgroundColor: "var(--surface)", 
+        border: "1px solid var(--border)", 
+        borderRadius: "12px", 
+        overflow: "hidden",
+        boxShadow: "var(--shadow)"
+      }}>
+        <div style={{ 
+          padding: "16px 20px", 
+          borderBottom: "1px solid var(--border)", 
+          display: "flex", 
+          alignItems: "center", 
+          justifyContent: "space-between",
+          backgroundColor: "rgba(0,0,0,0.02)"
+        }}>
+          <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 600, color: "var(--text)", display: "flex", alignItems: "center", gap: "8px" }}>
+            <Database size={16} /> Upload History
+          </h3>
+          <button onClick={fetchHistory} className="btn btn-outline" style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 12px", fontSize: "13px" }}>
+            {loadingHistory ? <Loader2 size={14} className="spin" /> : <Play size={14} style={{ transform: "rotate(90deg)" }} />}
+            Refresh
+          </button>
+        </div>
+        
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
+            <thead>
+              <tr style={{ backgroundColor: "#f8fafc", borderBottom: "1px solid var(--border)" }}>
+                <th style={{ padding: "12px 20px", textAlign: "left", fontWeight: 600, color: "var(--muted)" }}>Date</th>
+                <th style={{ padding: "12px 20px", textAlign: "left", fontWeight: 600, color: "var(--muted)" }}>Filename</th>
+                <th style={{ padding: "12px 20px", textAlign: "left", fontWeight: 600, color: "var(--muted)" }}>TRN</th>
+                <th style={{ padding: "12px 20px", textAlign: "left", fontWeight: 600, color: "var(--muted)" }}>Province</th>
+                <th style={{ padding: "12px 20px", textAlign: "left", fontWeight: 600, color: "var(--muted)" }}>NAS Path</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.length === 0 ? (
+                <tr>
+                  <td colSpan={5} style={{ padding: "32px", textAlign: "center", color: "var(--muted)" }}>
+                    {loadingHistory ? "Loading history..." : "No packets have been manually uploaded yet."}
+                  </td>
+                </tr>
+              ) : (
+                history.map((record) => (
+                  <tr key={record.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                    <td style={{ padding: "12px 20px", color: "var(--muted)", whiteSpace: "nowrap" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <Calendar size={14} />
+                        {new Date(record.createdAt).toLocaleString()}
+                      </div>
+                    </td>
+                    <td style={{ padding: "12px 20px", fontWeight: 500 }}>{record.filename}</td>
+                    <td style={{ padding: "12px 20px", fontFamily: "monospace" }}>{record.trn}</td>
+                    <td style={{ padding: "12px 20px" }}>
+                      <span style={{ 
+                        display: "inline-flex", alignItems: "center", gap: "4px",
+                        backgroundColor: "rgba(59,130,246,0.1)", color: "var(--primary)",
+                        padding: "4px 8px", borderRadius: "100px", fontSize: "12px", fontWeight: 600
+                      }}>
+                        <MapPin size={12} /> {record.province}
+                      </span>
+                    </td>
+                    <td style={{ padding: "12px 20px", color: "var(--muted)", fontSize: "13px" }}>{record.nasPath}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
       
       <style dangerouslySetInnerHTML={{__html: `
         .spin { animation: spin 1s linear infinite; }

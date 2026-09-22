@@ -1,6 +1,6 @@
 "use client";
 
-import { FileClock, LayoutDashboard, Settings, FilePlus, Menu, X, LogOut, LogIn, HardDriveDownload, UserCircle, Users, UploadCloud } from "lucide-react";
+import { FileClock, LayoutDashboard, Settings, FilePlus, Menu, X, LogOut, LogIn, HardDriveDownload, UserCircle, Users, UploadCloud, AlertTriangle } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -10,6 +10,7 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/filing", label: "Matrix Filing", icon: FilePlus },
   { href: "/dashboard/requests", label: "Requests", icon: FileClock },
+  { href: "/dashboard/wrong-tracker", label: "Wrong Tracker", icon: AlertTriangle },
   { href: "/upload", label: "Upload Packets", icon: UploadCloud },
   { href: "/dashboard/account", label: "My Account", icon: UserCircle },
   { href: "/automation", label: "Backend Restoration", icon: HardDriveDownload, adminOnly: true },

@@ -205,3 +205,15 @@ model PasswordResetRequest {
   @@index([userId])
   @@index([status])
 }
+
+model UploadedPacket {
+  id        String   @id @default(cuid())
+  trn       String
+  filename  String
+  nasPath   String
+  province  String
+  createdAt DateTime @default(now())
+
+  @@index([province])
+  @@index([createdAt])
+}
