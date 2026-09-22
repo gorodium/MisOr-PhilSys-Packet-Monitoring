@@ -56,6 +56,20 @@ export async function POST(req: NextRequest) {
 
     const { verifySession } = await import("@/lib/auth");
     const session = await verifySession();
+    
+    // Update the packet to link to the new ticket and clear the matrix reply so it disappears from the queue
+    await prisma.packet.update({
+      where: { id: packet.id },
+      data: {
+        ticketNumber: ticket.ticketNumber,
+        ticketId: ticket.matrixTicketId,
+        latestMatrixReply: null,
+        latestMatrixReplyAuthor: null,
+        latestMatrixReplyDate: null,
+        syncStatus: "FILED",
+      }
+    });
+
     const { writeActivity } = await import("@/lib/activity");
     await writeActivity({
       type: "REFILE",

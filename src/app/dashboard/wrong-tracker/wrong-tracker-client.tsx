@@ -12,6 +12,7 @@ type WrongTrackerPacket = {
   latestMatrixReply: string | null;
   latestMatrixReplyAuthor: string | null;
   latestMatrixReplyDate: string | null;
+  originalRemarks: string | null;
   matrixTicket?: {
     matrixTicketId: string;
     title: string;
@@ -118,11 +119,36 @@ export function WrongTrackerClient() {
     const foundTracker = trackersList.find(t => t.name === defaultTrackerName);
     setTrackerId(foundTracker ? foundTracker.id : (trackersList[0]?.id || ""));
     setSubject(`${defaultTrackerName} - Misamis Oriental`);
-    setDescription(`TRN: ${packet.normalizedPacketCode}\n\nDescribe the TRN issue/s: ${packet.issueCategory || ""}`);
+    
+    // Auto Matrix Filing logic on Requests (using original remarks if available, fallback to issueCategory)
+    const remarksToUse = packet.originalRemarks || packet.issueCategory || "";
+    setDescription(`TRN: ${packet.normalizedPacketCode}\n\nDescribe the TRN issue/s: ${remarksToUse}`);
+    
     setStatusId(1);
     setPriorityId(2);
-    setAssigneeId("");
-    setCategoryId("");
+
+    // Apply default assignee and category based on remarks (exactly like Requests section)
+    let initialAssigneeId: number | "" = "";
+    let initialCategory = "";
+
+    const lowerRemarks = remarksToUse.toLowerCase();
+
+    if (lowerRemarks.includes("unclickable")) {
+      initialCategory = "With PSN";
+      const aaron = assigneesList.find(a => a.name.toLowerCase().includes("aaron"));
+      if (aaron) initialAssigneeId = aaron.id;
+    } else if (lowerRemarks.includes("still in progress")) {
+      initialCategory = "NO PSN";
+      const joshua = assigneesList.find(a => a.name.toLowerCase().includes("joshua"));
+      if (joshua) initialAssigneeId = joshua.id;
+    } else if (lowerRemarks.includes("no photo") || lowerRemarks.includes("no qr")) {
+      const aaron = assigneesList.find(a => a.name.toLowerCase().includes("aaron"));
+      if (aaron) initialAssigneeId = aaron.id;
+    }
+
+    setAssigneeId(initialAssigneeId);
+    setCategoryId(initialCategory);
+
     const today = new Date();
     setStartDate(formatDate(today));
     setDueDate(formatDate(getNextWorkday(today)));
@@ -133,6 +159,17 @@ export function WrongTrackerClient() {
     const tracker = trackersList.find(t => t.id === id);
     if (tracker) {
       setSubject(`${tracker.name} - Misamis Oriental`);
+    }
+  }
+
+  function handleCategoryChange(cat: string) {
+    setCategoryId(cat);
+    if (cat === "NO PSN") {
+      const joshua = assigneesList.find(a => a.name.toLowerCase().includes("joshua"));
+      if (joshua) setAssigneeId(joshua.id);
+    } else if (cat === "With PSN") {
+      const aaron = assigneesList.find(a => a.name.toLowerCase().includes("aaron"));
+      if (aaron) setAssigneeId(aaron.id);
     }
   }
 
@@ -351,7 +388,7 @@ export function WrongTrackerClient() {
               {/* Category */}
               <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
                 <label style={{ width: "120px", fontSize: "13px", fontWeight: 500, textAlign: "right", marginTop: "8px", flexShrink: 0 }}>Category <span style={{ color: "var(--danger)" }}>*</span></label>
-                <select className="input" style={{ flex: 1 }} value={categoryId as string} onChange={e => setCategoryId(e.target.value)} required>
+                <select className="input" style={{ flex: 1 }} value={categoryId as string} onChange={e => handleCategoryChange(e.target.value)} required>
                   <option value="">Select category...</option>
                   {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>

@@ -19,7 +19,18 @@ export async function GET(req: NextRequest) {
       orderBy: { latestMatrixReplyDate: "desc" }
     });
 
-    return ok({ packets });
+    const enrichedPackets = await Promise.all(packets.map(async (p) => {
+      const originalReq = await prisma.matrixFilingRequest.findFirst({
+        where: { trn: p.normalizedPacketCode },
+        orderBy: { createdAt: 'desc' }
+      });
+      return {
+        ...p,
+        originalRemarks: originalReq?.remarks || null
+      };
+    }));
+
+    return ok({ packets: enrichedPackets });
   } catch (error) {
     return handleApiError(error);
   }
