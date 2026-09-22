@@ -31,11 +31,10 @@ export default function LoginPage() {
       
       if (res.ok && data.success) {
         if (data.forcePasswordChange) {
-          router.push("/change-password");
+          window.location.href = "/change-password";
         } else {
-          router.push("/dashboard");
+          window.location.href = "/dashboard";
         }
-        router.refresh(); 
       } else {
         setError(data.error || "Login failed");
       }

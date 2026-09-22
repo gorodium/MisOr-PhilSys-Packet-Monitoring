@@ -380,16 +380,15 @@ export default function UploadPage() {
             <thead>
               <tr style={{ backgroundColor: "#f8fafc", borderBottom: "1px solid var(--border)" }}>
                 <th style={{ padding: "12px 20px", textAlign: "left", fontWeight: 600, color: "var(--muted)" }}>Date</th>
-                <th style={{ padding: "12px 20px", textAlign: "left", fontWeight: 600, color: "var(--muted)" }}>Filename</th>
                 <th style={{ padding: "12px 20px", textAlign: "left", fontWeight: 600, color: "var(--muted)" }}>TRN</th>
-                <th style={{ padding: "12px 20px", textAlign: "left", fontWeight: 600, color: "var(--muted)" }}>Province</th>
+                <th style={{ padding: "12px 20px", textAlign: "left", fontWeight: 600, color: "var(--muted)", whiteSpace: "nowrap" }}>Province</th>
                 <th style={{ padding: "12px 20px", textAlign: "left", fontWeight: 600, color: "var(--muted)" }}>NAS Path</th>
               </tr>
             </thead>
             <tbody>
               {history.length === 0 ? (
                 <tr>
-                  <td colSpan={5} style={{ padding: "32px", textAlign: "center", color: "var(--muted)" }}>
+                  <td colSpan={4} style={{ padding: "32px", textAlign: "center", color: "var(--muted)" }}>
                     {loadingHistory ? "Loading history..." : "No packets have been manually uploaded yet."}
                   </td>
                 </tr>
@@ -402,9 +401,8 @@ export default function UploadPage() {
                         {new Date(record.createdAt).toLocaleString()}
                       </div>
                     </td>
-                    <td style={{ padding: "12px 20px", fontWeight: 500 }}>{record.filename}</td>
                     <td style={{ padding: "12px 20px", fontFamily: "monospace" }}>{record.trn}</td>
-                    <td style={{ padding: "12px 20px" }}>
+                    <td style={{ padding: "12px 20px", whiteSpace: "nowrap" }}>
                       <span style={{ 
                         display: "inline-flex", alignItems: "center", gap: "4px",
                         backgroundColor: "rgba(59,130,246,0.1)", color: "var(--primary)",

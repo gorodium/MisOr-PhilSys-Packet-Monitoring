@@ -34,6 +34,12 @@ export function AppShell({ children, isAdmin }: { children: ReactNode, isAdmin?:
 
   const visibleNavItems = navItems.filter(item => !item.adminOnly || isAdmin);
 
+  const isLoginPage = pathname === "/login";
+
+  if (isLoginPage) {
+    return <main>{children}</main>;
+  }
+
   return (
     <div className="app-shell">
       {/* Mobile Top Bar */}
