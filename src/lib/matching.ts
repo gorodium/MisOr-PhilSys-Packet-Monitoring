@@ -186,6 +186,15 @@ async function applyPacketMatches(packet: Packet, matches: TicketMatch[]) {
     }
   }
 
+  const existingPacket = await prisma.packet.findUnique({ where: { id: packet.id } });
+  const replyDate = reply?.createdAt ? new Date(reply.createdAt) : null;
+  const existingDate = existingPacket?.latestMatrixReplyDate ? new Date(existingPacket.latestMatrixReplyDate) : null;
+  const isNewerReply = replyDate && (!existingDate || replyDate > existingDate);
+
+  const replyBodyToSave = isNewerReply ? reply.body : (existingPacket?.latestMatrixReply ?? null);
+  const replyAuthorToSave = isNewerReply ? reply.author : (existingPacket?.latestMatrixReplyAuthor ?? null);
+  const replyDateToSave = isNewerReply ? reply.createdAt : (existingPacket?.latestMatrixReplyDate ?? null);
+
   await prisma.packet.update({
     where: { id: packet.id },
     data: {
@@ -193,9 +202,9 @@ async function applyPacketMatches(packet: Packet, matches: TicketMatch[]) {
       ticketNumber: match.ticket.ticketNumber,
       ticketId: match.ticket.matrixTicketId,
       matrixTicketDbId: dbTickets[0].id,
-      latestMatrixReply: reply?.body ?? null,
-      latestMatrixReplyAuthor: reply?.author ?? null,
-      latestMatrixReplyDate: reply?.createdAt ?? null,
+      latestMatrixReply: replyBodyToSave,
+      latestMatrixReplyAuthor: replyAuthorToSave,
+      latestMatrixReplyDate: replyDateToSave,
       matrixTags: allTags,
       requiredInitialTrn,
       syncStatus: PacketSyncStatus.FILED,
@@ -380,6 +389,17 @@ async function upsertPacketFromMatrix(
   const newTags = extractTagsFromReplies(reply ? [reply] : []);
   const mergedTags = Array.from(new Set([...existingTags, ...newTags]));
   
+  // Determine if the reply from Matrix is newer than what we already know about
+  const replyDate = reply?.createdAt ? new Date(reply.createdAt) : null;
+  const existingDate = existingPacket?.latestMatrixReplyDate ? new Date(existingPacket.latestMatrixReplyDate) : null;
+  
+  // A reply is "newer" if we have no existing date, or if its date is strictly greater
+  const isNewerReply = replyDate && (!existingDate || replyDate > existingDate);
+
+  const replyBodyToSave = isNewerReply ? reply.body : (existingPacket?.latestMatrixReply ?? null);
+  const replyAuthorToSave = isNewerReply ? reply.author : (existingPacket?.latestMatrixReplyAuthor ?? null);
+  const replyDateToSave = isNewerReply ? reply.createdAt : (existingPacket?.latestMatrixReplyDate ?? null);
+
   // Upsert the packet itself
   const packet = await prisma.packet.upsert({
     where: { normalizedPacketCode: normalized },
@@ -394,9 +414,9 @@ async function upsertPacketFromMatrix(
       ticketNumber: matrixTicket.ticketNumber,
       ticketId: matrixTicket.matrixTicketId,
       matrixTicketDbId: dbTicket.id,
-      latestMatrixReply: reply?.body || null,
-      latestMatrixReplyAuthor: reply?.author || null,
-      latestMatrixReplyDate: reply?.createdAt || null,
+      latestMatrixReply: replyBodyToSave,
+      latestMatrixReplyAuthor: replyAuthorToSave,
+      latestMatrixReplyDate: replyDateToSave,
       matrixTags: mergedTags,
       lastCheckedAt: new Date()
     },
@@ -406,9 +426,9 @@ async function upsertPacketFromMatrix(
       ticketNumber: matrixTicket.ticketNumber,
       ticketId: matrixTicket.matrixTicketId,
       matrixTicketDbId: dbTicket.id,
-      latestMatrixReply: reply?.body || null,
-      latestMatrixReplyAuthor: reply?.author || null,
-      latestMatrixReplyDate: reply?.createdAt || null,
+      latestMatrixReply: replyBodyToSave,
+      latestMatrixReplyAuthor: replyAuthorToSave,
+      latestMatrixReplyDate: replyDateToSave,
       matrixTags: mergedTags,
       lastCheckedAt: new Date()
     }

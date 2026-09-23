@@ -65,7 +65,6 @@ export async function POST(req: NextRequest) {
         ticketId: ticket.matrixTicketId,
         latestMatrixReply: null,
         latestMatrixReplyAuthor: null,
-        latestMatrixReplyDate: null,
         syncStatus: "FILED",
       }
     });
