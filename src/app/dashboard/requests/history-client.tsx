@@ -639,12 +639,12 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
           <table className="data-table" style={{ width: "100%", textAlign: "left", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)", fontSize: "0.85rem", color: "var(--muted)" }}>
-                <th>Date</th>
-                <th style={{ textAlign: "center" }}>Filed By</th>
-                <th style={{ paddingRight: "3rem" }}>TRN</th>
-                <th style={{ textAlign: "center", paddingLeft: "3rem" }}>Tracker</th>
-                <th style={{ textAlign: "center" }}>Status</th>
-                <th style={{ textAlign: "right" }}>Actions</th>
+                <th style={{ whiteSpace: "nowrap", width: "160px" }}>Date</th>
+                <th style={{ textAlign: "center", whiteSpace: "nowrap" }}>Filed By</th>
+                <th style={{ paddingRight: "1rem", whiteSpace: "nowrap" }}>TRN</th>
+                <th style={{ textAlign: "center", paddingLeft: "1rem", whiteSpace: "nowrap" }}>Tracker</th>
+                <th style={{ textAlign: "center", whiteSpace: "nowrap" }}>Status</th>
+                <th style={{ textAlign: "right", whiteSpace: "nowrap", width: "200px" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -652,10 +652,10 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
                 const displayDate = new Date(activeTab === "filed" ? req.updatedAt : req.createdAt);
                 return (
                 <tr key={req.id} style={{ borderBottom: "1px solid var(--border)", fontSize: "0.9rem" }}>
-                  <td style={{ verticalAlign: "middle" }}>{displayDate.toLocaleDateString()} {displayDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
-                  <td style={{ verticalAlign: "middle", textAlign: "center" }}>{req.user?.username || "Unknown"}</td>
-                  <td style={{ fontFamily: "monospace", verticalAlign: "middle", paddingRight: "3rem" }}>{req.trn}</td>
-                  <td style={{ verticalAlign: "middle", textAlign: "center", paddingLeft: "3rem" }}>
+                  <td style={{ verticalAlign: "middle", whiteSpace: "nowrap" }}>{displayDate.toLocaleDateString()} {displayDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
+                  <td style={{ verticalAlign: "middle", textAlign: "center", whiteSpace: "nowrap" }}>{req.user?.username || "Unknown"}</td>
+                  <td style={{ fontFamily: "monospace", verticalAlign: "middle", paddingRight: "1rem", whiteSpace: "nowrap" }}>{req.trn}</td>
+                  <td style={{ verticalAlign: "middle", textAlign: "center", paddingLeft: "1rem", whiteSpace: "nowrap" }}>
                     <span style={{ 
                       padding: "0.15rem 0.4rem", 
                       borderRadius: "4px", 
@@ -667,7 +667,7 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
                       {req.actionType}
                     </span>
                   </td>
-                  <td style={{ verticalAlign: "middle", textAlign: "center" }}>
+                  <td style={{ verticalAlign: "middle", textAlign: "center", whiteSpace: "nowrap" }}>
                     {req.status === "FILED" ? (
                       <span style={{ color: "var(--success)", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "0.25rem" }} title={req.matrixTicketId || ""}>
                         <CheckCircle size={14} /> Filed
@@ -682,8 +682,8 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
                       </span>
                     )}
                   </td>
-                  <td style={{ textAlign: "right", verticalAlign: "middle" }}>
-                    <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", alignItems: "center" }}>
+                  <td style={{ textAlign: "right", verticalAlign: "middle", whiteSpace: "nowrap" }}>
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", alignItems: "center", flexWrap: "nowrap" }}>
                       {(req.status === "PENDING" || isAdmin) && (
                         <button 
                           onClick={() => openEditModal(req)}
@@ -698,7 +698,7 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
                         <button 
                           onClick={() => openModal(req)}
                           className="btn btn-primary"
-                          style={{ minHeight: "32px", padding: "4px 12px", fontSize: "13px" }}
+                          style={{ minHeight: "32px", padding: "4px 12px", fontSize: "13px", whiteSpace: "nowrap" }}
                         >
                           File to Matrix
                         </button>
