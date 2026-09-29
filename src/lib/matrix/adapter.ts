@@ -178,6 +178,14 @@ class DemoMatrixAdapter implements MatrixAdapter {
     return extractLikelyPacketCodes(ticketText(ticket));
   }
 
+  async fetchTrackers() {
+    return [
+      { id: 42, name: "ePhilID TRN Concerns" },
+      { id: 221, name: "Updating Concerns" },
+      { id: 41, name: "ePhilID QR Concerns" }
+    ];
+  }
+
   async extractRelevantRepliesForPacket(ticket: MatrixTicketRecord, packetCode: string) {
     const normalizedPacketCode = normalizePacketCode(packetCode);
     return (demoReplies[ticket.matrixTicketId] ?? [])
@@ -337,6 +345,16 @@ class HttpMatrixAdapter implements MatrixAdapter {
     try {
       const payload = await this.requestJson<Record<string, unknown>>(url);
       return extractJournalsFromIssuePayload(payload);
+    } catch {
+      return [];
+    }
+  }
+
+  async fetchTrackers(): Promise<{ id: number, name: string }[]> {
+    const url = this.buildUrl("/trackers.json");
+    try {
+      const payload = await this.requestJson<{ trackers?: { id: number, name: string }[] }>(url);
+      return payload.trackers ?? [];
     } catch {
       return [];
     }

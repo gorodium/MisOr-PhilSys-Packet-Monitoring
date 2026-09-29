@@ -116,7 +116,8 @@ export function WrongTrackerClient() {
       defaultTrackerName = "Updating Concerns";
     }
 
-    const foundTracker = trackersList.find(t => t.name === defaultTrackerName);
+    const foundTracker = trackersList.find(t => t.name.toLowerCase().includes(defaultTrackerName.toLowerCase())) || 
+                         trackersList.find(t => t.name.toLowerCase().includes("trn concerns"));
     setTrackerId(foundTracker ? foundTracker.id : (trackersList[0]?.id || ""));
     setSubject(`${defaultTrackerName} - Misamis Oriental`);
     

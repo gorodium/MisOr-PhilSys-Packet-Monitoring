@@ -193,7 +193,8 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
     // Auto-select tracker based on actionType if we have trackers loaded
     const isQR = ((req.remarks || "").toLowerCase().includes("qr") || (req.actionType || "").toLowerCase().includes("qr"));
     const defaultTrackerName = isQR ? "ePhilID QR Concerns" : (req.actionType === "Updating" ? "Updating Concerns" : "ePhilID TRN Concerns");
-    const foundTracker = trackersList.find(t => t.name === defaultTrackerName);
+    const foundTracker = trackersList.find(t => t.name.toLowerCase().includes(defaultTrackerName.toLowerCase())) || 
+                         trackersList.find(t => t.name.toLowerCase().includes("trn concerns"));
     setTrackerId(foundTracker ? foundTracker.id : (trackersList[0]?.id || ""));
     
     setSubject(`${defaultTrackerName} - Misamis Oriental`);
@@ -288,8 +289,9 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
     for (const req of unclickableRequests) {
       const isQR = ((req.remarks || "").toLowerCase().includes("qr") || (req.actionType || "").toLowerCase().includes("qr"));
       const defaultTrackerName = isQR ? "ePhilID QR Concerns" : (req.actionType === "Updating" ? "Updating Concerns" : "ePhilID TRN Concerns");
-      const foundTracker = trackersList.find(t => t.name === defaultTrackerName);
-      const reqTrackerId = foundTracker ? foundTracker.id : (trackersList[0]?.id || "");
+      const foundTracker = trackersList.find(t => t.name.toLowerCase().includes(defaultTrackerName.toLowerCase())) || 
+                           trackersList.find(t => t.name.toLowerCase().includes("trn concerns"));
+      const reqTrackerId = foundTracker ? foundTracker.id : "";
       
       const reqSubject = `${defaultTrackerName} - Misamis Oriental`;
       const reqDescription = `TRN: ${req.trn}\n\nDescribe the TRN issue/s: ${req.remarks}`;

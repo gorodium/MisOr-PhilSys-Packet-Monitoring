@@ -67,14 +67,24 @@ export async function createTicketsForPackets(input: { packetIds: string[]; conf
     const settings = await getResolvedSettings();
     const adapter = await createMatrixAdapter();
     const candidates = await getTicketCandidates(input.packetIds);
+    const trackersList = await adapter.fetchTrackers();
 
     for (const packet of candidates) {
       try {
         const preview = renderTicketPreview(packet, settings);
+        
+        const isQR = ((packet.issueCategory || "").toLowerCase().includes("qr"));
+        const defaultTrackerName = isQR ? "ePhilID QR Concerns" : 
+            ((packet.issueCategory || "").toLowerCase().includes("updating") ? "Updating Concerns" : "ePhilID TRN Concerns");
+            
+        const foundTracker = trackersList.find(t => t.name.toLowerCase().includes(defaultTrackerName.toLowerCase())) || 
+                             trackersList.find(t => t.name.toLowerCase().includes("trn concerns"));
+        
         const ticket = await adapter.createTicketForPacket({
           packet,
           title: preview.title,
-          body: preview.body
+          body: preview.body,
+          trackerId: foundTracker?.id
         });
         const matrixTicket = await prisma.matrixTicket.upsert({
           where: { matrixTicketId: ticket.matrixTicketId },

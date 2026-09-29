@@ -45,5 +45,6 @@ export type MatrixAdapter = {
   fetchTicketReplies(ticketId: string): Promise<MatrixReply[]>;
   extractPacketCodesFromTicket(ticket: MatrixTicketRecord): string[];
   extractRelevantRepliesForPacket(ticket: MatrixTicketRecord, packetCode: string): Promise<RelevantReply[]>;
+  fetchTrackers(): Promise<{ id: number, name: string }[]>;
 };
 
