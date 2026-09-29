@@ -144,6 +144,22 @@ export function FilingClient() {
 
               <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
                 
+                <div style={{ 
+                  color: "var(--danger)", 
+                  fontWeight: 600, 
+                  fontSize: "14px", 
+                  padding: "12px 16px", 
+                  backgroundColor: "#fef2f2", 
+                  border: "1px solid #fecaca", 
+                  borderRadius: "8px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px"
+                }}>
+                  <AlertCircle size={18} />
+                  DO NOT File "Potential Match" TRNs Concerns
+                </div>
+
                 <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                   <label className="field-label" htmlFor="actionType">
                     Tracker <span style={{ color: "var(--danger)", marginLeft: "2px" }} aria-label="required">*</span>
