@@ -190,9 +190,12 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
   function openModal(req: FilingRequest) {
     setSelectedReq(req);
     
-    // Auto-select tracker based on actionType if we have trackers loaded
-    const isQR = ((req.remarks || "").toLowerCase().includes("qr") || (req.actionType || "").toLowerCase().includes("qr"));
-    const defaultTrackerName = isQR ? "ePhilID QR Concerns" : (req.actionType === "Updating" ? "Updating Concerns" : "ePhilID TRN Concerns");
+    // Auto-select tracker based strictly on employee's requested actionType
+    const defaultTrackerName = 
+      req.actionType === "Updating" ? "Updating Concerns" :
+      req.actionType === "Photo and QR Concerns" ? "ePhilID QR Concerns" :
+      "ePhilID TRN Concerns";
+
     const foundTracker = trackersList.find(t => t.name.toLowerCase().includes(defaultTrackerName.toLowerCase())) || 
                          trackersList.find(t => t.name.toLowerCase().includes("trn concerns"));
     setTrackerId(foundTracker ? foundTracker.id : (trackersList[0]?.id || ""));
@@ -287,8 +290,10 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
     let successCount = 0;
     
     for (const req of unclickableRequests) {
-      const isQR = ((req.remarks || "").toLowerCase().includes("qr") || (req.actionType || "").toLowerCase().includes("qr"));
-      const defaultTrackerName = isQR ? "ePhilID QR Concerns" : (req.actionType === "Updating" ? "Updating Concerns" : "ePhilID TRN Concerns");
+      const defaultTrackerName = 
+        req.actionType === "Updating" ? "Updating Concerns" :
+        req.actionType === "Photo and QR Concerns" ? "ePhilID QR Concerns" :
+        "ePhilID TRN Concerns";
       const foundTracker = trackersList.find(t => t.name.toLowerCase().includes(defaultTrackerName.toLowerCase())) || 
                            trackersList.find(t => t.name.toLowerCase().includes("trn concerns"));
       const reqTrackerId = foundTracker ? foundTracker.id : "";
