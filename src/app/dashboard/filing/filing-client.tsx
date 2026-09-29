@@ -153,7 +153,10 @@ export function FilingClient() {
                     className="select"
                     style={{ minHeight: "44px", fontSize: "15px" }}
                     value={actionType}
-                    onChange={(e) => setActionType(e.target.value)}
+                    onChange={(e) => {
+                      setActionType(e.target.value);
+                      setIssueType("");
+                    }}
                     required
                   >
                     <option value="Updating">Updating</option>
@@ -175,13 +178,21 @@ export function FilingClient() {
                     required
                   >
                     <option value="" disabled>Select issue type</option>
-                    <option value="Unclickable">Unclickable</option>
-                    <option value="Still in progress">Still in progress</option>
-                    <option value="Failed Registration">Failed Registration</option>
-                    <option value="No Photo">No Photo</option>
-                    <option value="No QR">No QR</option>
-                    <option value="No Photo and QR">No Photo and QR</option>
-                    <option value="Others">Others</option>
+                    {actionType === "Photo and QR Concerns" ? (
+                      <>
+                        <option value="No Photo">No Photo</option>
+                        <option value="No QR">No QR</option>
+                        <option value="No Photo and QR">No Photo and QR</option>
+                        <option value="Others">Others</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="Unclickable">Unclickable</option>
+                        <option value="Still in progress">Still in progress</option>
+                        <option value="Failed Registration">Failed Registration</option>
+                        <option value="Others">Others</option>
+                      </>
+                    )}
                   </select>
                 </div>
 
