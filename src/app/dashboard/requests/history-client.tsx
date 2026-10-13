@@ -280,16 +280,29 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
     setBatchConfirm({ type: "Still In Progress", requests: sipRequests });
   }
 
+  function handleBatchFilePhotoAndQR() {
+    const photoQrRequests = requests.filter(req => req.status === "PENDING" && (
+      req.actionType === "Photo and QR Concerns" ||
+      (req.remarks || "").toLowerCase().includes("photo") ||
+      (req.remarks || "").toLowerCase().includes("qr")
+    ));
+    if (photoQrRequests.length === 0) {
+      setErrorMessage("No pending requests found with 'Photo and QR' concerns.");
+      return;
+    }
+    setBatchConfirm({ type: "Photo and QR", requests: photoQrRequests });
+  }
+
   async function executeBatchFile() {
-    const unclickableRequests = batchConfirm?.requests;
-    if (!unclickableRequests) return;
+    const targetRequests = batchConfirm?.requests;
+    if (!targetRequests) return;
     
     setBatchConfirm(null);
-    setBatchProgress({ current: 0, total: unclickableRequests.length });
+    setBatchProgress({ current: 0, total: targetRequests.length });
     setBatchFiling(true);
     let successCount = 0;
     
-    for (const req of unclickableRequests) {
+    for (const req of targetRequests) {
       const defaultTrackerName = 
         req.actionType === "Updating" ? "Updating Concerns" :
         req.actionType === "Photo and QR Concerns" ? "ePhilID QR Concerns" :
@@ -304,9 +317,14 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
       const reqStatusId = 1;
       const reqPriorityId = 2;
       
+      const lowerRemarks = (req.remarks || "").toLowerCase();
+      const isStillInProgress = lowerRemarks.includes("still in progress");
+      
       const aaron = assigneesList.find(a => a.name.toLowerCase().includes("aaron"));
-      const reqAssigneeId = aaron ? aaron.id : undefined;
-      const reqCategoryName = "With PSN";
+      const joshua = assigneesList.find(a => a.name.toLowerCase().includes("joshua"));
+      
+      const reqAssigneeId = isStillInProgress ? (joshua ? joshua.id : undefined) : (aaron ? aaron.id : undefined);
+      const reqCategoryName = isStillInProgress ? "NO PSN" : "With PSN";
       
       const today = new Date();
       const reqStartDate = formatDate(today);
@@ -344,7 +362,7 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
     
     setBatchFiling(false);
     fetchRequests();
-    setSuccessMessage(`Batch filing complete! Successfully filed ${successCount} out of ${unclickableRequests.length} requests.`);
+    setSuccessMessage(`Batch filing complete! Successfully filed ${successCount} out of ${targetRequests.length} requests.`);
   }
 
   async function handleFileToMatrix(e: React.FormEvent) {
@@ -549,6 +567,14 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
                 >
                   File All Still In Progress
                 </button>
+                <button 
+                  onClick={handleBatchFilePhotoAndQR}
+                  className="btn btn-primary"
+                  style={{ display: "flex", gap: "8px", alignItems: "center" }}
+                  title="Automatically file all pending requests marked as Photo and QR Concerns"
+                >
+                  File All Photo & QR
+                </button>
               </>
           )}
           <button 
@@ -691,7 +717,7 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
                   </td>
                   <td style={{ textAlign: "right", verticalAlign: "middle", whiteSpace: "nowrap" }}>
                     <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", alignItems: "center", flexWrap: "nowrap" }}>
-                      {(req.status === "PENDING" || isAdmin) && (
+                      {(req.status === "PENDING" || req.status === "ERROR" || isAdmin) && (
                         <button 
                           onClick={() => openEditModal(req)}
                           className="btn btn-secondary"
@@ -707,7 +733,7 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
                           className="btn btn-primary"
                           style={{ minHeight: "32px", padding: "4px 12px", fontSize: "13px", whiteSpace: "nowrap" }}
                         >
-                          File to Matrix
+                          {req.status === "ERROR" ? "Retry Filing" : "File to Matrix"}
                         </button>
                       )}
                       

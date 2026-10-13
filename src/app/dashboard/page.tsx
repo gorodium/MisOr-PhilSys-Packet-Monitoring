@@ -1,9 +1,9 @@
 import { DashboardClient } from "@/app/dashboard/dashboard-client";
-import { cookies } from "next/headers";
+import { verifySession } from "@/lib/auth";
 
 export default async function DashboardPage() {
-  const cookieStore = await cookies();
-  const isAdmin = cookieStore.get("admin_auth")?.value === "authenticated";
+  const session = await verifySession();
+  const isAdmin = session?.role === "ADMIN";
 
   return <DashboardClient isAdmin={isAdmin} />;
 }

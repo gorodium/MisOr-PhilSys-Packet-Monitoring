@@ -1,9 +1,9 @@
-import { cookies } from "next/headers";
 import { HistoryClient } from "./history-client";
+import { verifySession } from "@/lib/auth";
 
 export default async function FilingHistoryPage() {
-  const cookieStore = await cookies();
-  const isAdmin = cookieStore.get("admin_auth")?.value === "authenticated";
+  const session = await verifySession();
+  const isAdmin = session?.role === "ADMIN";
   
   return <HistoryClient isAdmin={isAdmin} />;
 }

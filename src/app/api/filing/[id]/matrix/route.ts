@@ -59,6 +59,18 @@ export async function POST(
       
       const resolvedCategoryId = data.categoryName ? KNOWN_CATEGORY_IDS[data.categoryName] : undefined;
       
+      let trackerId = data.trackerId;
+      if (!trackerId) {
+        const trackersList = await adapter.fetchTrackers();
+        const defaultTrackerName = 
+          existingReq.actionType === "Updating" ? "Updating Concerns" :
+          existingReq.actionType === "Photo and QR Concerns" ? "ePhilID QR Concerns" :
+          "ePhilID TRN Concerns";
+        const foundTracker = trackersList.find(t => t.name.toLowerCase().includes(defaultTrackerName.toLowerCase())) || 
+                             trackersList.find(t => t.name.toLowerCase().includes("trn concerns"));
+        trackerId = foundTracker?.id;
+      }
+
       const ticket = await adapter.createTicketForPacket({
         packet: { 
           id: existingReq.id, 
@@ -68,7 +80,7 @@ export async function POST(
         },
         title: data.title,
         body: data.body,
-        trackerId: data.trackerId,
+        trackerId,
         statusId: data.statusId,
         priorityId: data.priorityId,
         assigneeId: data.assigneeId,
