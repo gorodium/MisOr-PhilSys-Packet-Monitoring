@@ -293,6 +293,15 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
     setBatchConfirm({ type: "Photo and QR", requests: photoQrRequests });
   }
 
+  function handleBatchRetryFailed() {
+    const failedList = requests.filter(req => req.status === "ERROR");
+    if (failedList.length === 0) {
+      setErrorMessage("No failed requests found to retry.");
+      return;
+    }
+    setBatchConfirm({ type: "Retry All Failed", requests: failedList });
+  }
+
   async function executeBatchFile() {
     const targetRequests = batchConfirm?.requests;
     if (!targetRequests) return;
@@ -484,6 +493,7 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
 
   const pendingRequests = requests.filter(r => r.status !== "FILED");
   const filedRequests = requests.filter(r => r.status === "FILED");
+  const failedRequests = requests.filter(r => r.status === "ERROR");
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -574,6 +584,25 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
                   title="Automatically file all pending requests marked as Photo and QR Concerns"
                 >
                   File All Photo & QR
+                </button>
+                <button 
+                  onClick={handleBatchRetryFailed}
+                  className="btn"
+                  style={{ 
+                    display: "flex", 
+                    gap: "8px", 
+                    alignItems: "center",
+                    backgroundColor: failedRequests.length > 0 ? "var(--danger)" : "var(--surface)",
+                    color: failedRequests.length > 0 ? "white" : "var(--muted)",
+                    borderColor: failedRequests.length > 0 ? "var(--danger)" : "var(--border)",
+                    cursor: failedRequests.length > 0 ? "pointer" : "not-allowed",
+                    opacity: failedRequests.length > 0 ? 1 : 0.6
+                  }}
+                  title={failedRequests.length > 0 ? `Batch retry filing ${failedRequests.length} failed requests` : "No failed requests to retry"}
+                  disabled={failedRequests.length === 0}
+                >
+                  <RefreshCw size={14} />
+                  Retry All Failed {failedRequests.length > 0 ? `(${failedRequests.length})` : ""}
                 </button>
               </>
           )}
@@ -1015,12 +1044,28 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
       {batchConfirm && (
         <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.6)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px", backdropFilter: "blur(2px)" }}>
           <div style={{ background: "var(--surface)", borderRadius: "12px", width: "100%", maxWidth: "450px", padding: "32px", textAlign: "center", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)" }}>
-            <div style={{ width: "64px", height: "64px", borderRadius: "50%", background: "var(--primary-light)", color: "var(--primary-dark)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
-              <Download size={32} />
+            <div style={{ 
+              width: "64px", 
+              height: "64px", 
+              borderRadius: "50%", 
+              background: batchConfirm.type.includes("Retry") ? "var(--danger-light, #fee2e2)" : "var(--primary-light)", 
+              color: batchConfirm.type.includes("Retry") ? "var(--danger)" : "var(--primary-dark)", 
+              display: "flex", 
+              alignItems: "center", 
+              justifyContent: "center", 
+              margin: "0 auto 20px" 
+            }}>
+              {batchConfirm.type.includes("Retry") ? <RefreshCw size={32} /> : <Download size={32} />}
             </div>
-            <h2 style={{ fontSize: "20px", fontWeight: 700, margin: "0 0 12px 0", color: "var(--text)" }}>{`Batch File ${batchConfirm.type}`}</h2>
+            <h2 style={{ fontSize: "20px", fontWeight: 700, margin: "0 0 12px 0", color: "var(--text)" }}>
+              {batchConfirm.type.includes("Retry") ? "Retry Filing Failed Requests" : `Batch File ${batchConfirm.type}`}
+            </h2>
             <p style={{ fontSize: "15px", color: "var(--muted)", margin: "0 0 24px 0", lineHeight: 1.5 }}>
-              Are you sure you want to auto-file <strong>{batchConfirm.requests.length}</strong> &apos;{batchConfirm.type}&apos; requests to Matrix?<br/>This process cannot be interrupted.
+              {batchConfirm.type.includes("Retry") ? (
+                <>Are you sure you want to retry filing <strong>{batchConfirm.requests.length}</strong> failed requests to Matrix?<br/>This process cannot be interrupted.</>
+              ) : (
+                <>Are you sure you want to auto-file <strong>{batchConfirm.requests.length}</strong> &apos;{batchConfirm.type}&apos; requests to Matrix?<br/>This process cannot be interrupted.</>
+              )}
             </p>
             <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
               <button 
@@ -1033,9 +1078,15 @@ export function HistoryClient({ isAdmin = false }: { isAdmin?: boolean }) {
               <button 
                 onClick={executeBatchFile}
                 className="btn btn-primary"
-                style={{ flex: 1, minHeight: "44px", fontSize: "15px" }}
+                style={{ 
+                  flex: 1, 
+                  minHeight: "44px", 
+                  fontSize: "15px",
+                  backgroundColor: batchConfirm.type.includes("Retry") ? "var(--danger)" : undefined,
+                  borderColor: batchConfirm.type.includes("Retry") ? "var(--danger)" : undefined
+                }}
               >
-                Yes, file them
+                {batchConfirm.type.includes("Retry") ? "Yes, retry them" : "Yes, file them"}
               </button>
             </div>
           </div>
