@@ -80,10 +80,14 @@ function StepLog({ steps }: { steps: StepLine[] }) {
 // ──────────────────────────────────────────────
 
 // --- Global Store ---
-const globalJobs = new Map<string, JobState>();
-let globalIsRecoveringAll = false;
-let globalIsPostingAll = false;
-const globalListeners = new Set<() => void>();
+const gStore = ((globalThis as any).__automationGlobalStore ??= {
+  jobs: new Map<string, JobState>(),
+  isRecoveringAll: false,
+  isPostingAll: false,
+  listeners: new Set<() => void>(),
+});
+const globalJobs: Map<string, JobState> = gStore.jobs;
+const globalListeners: Set<() => void> = gStore.listeners;
 
 function notifyGlobalListeners() {
   globalListeners.forEach((l) => l());
@@ -98,9 +102,9 @@ function updateGlobalJobs(key: string, state: JobState) {
 export function AutomationClient() {
   const [restorePackets, setRestorePackets] = useState<RestorePacket[]>([]);
   const [listLoading, setListLoading] = useState(false);
-  const [jobs, setJobs] = useState<Map<string, JobState>>(globalJobs);
-  const [isRecoveringAll, setIsRecoveringAll] = useState(globalIsRecoveringAll);
-  const [isPostingAll, setIsPostingAll] = useState(globalIsPostingAll);
+  const [jobs, setJobs] = useState<Map<string, JobState>>(() => new Map(globalJobs));
+  const [isRecoveringAll, setIsRecoveringAll] = useState<boolean>(() => gStore.isRecoveringAll);
+  const [isPostingAll, setIsPostingAll] = useState<boolean>(() => gStore.isPostingAll);
   const [commentingFor, setCommentingFor] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<"pending" | "completed" | "not_found" | "not_found_other" | "unrecoverable">("pending");
   const [filterProvince, setFilterProvince] = useState("");
@@ -110,8 +114,8 @@ export function AutomationClient() {
   useEffect(() => {
     const listener = () => {
       setJobs(new Map(globalJobs));
-      setIsRecoveringAll(globalIsRecoveringAll);
-      setIsPostingAll(globalIsPostingAll);
+      setIsRecoveringAll(gStore.isRecoveringAll);
+      setIsPostingAll(gStore.isPostingAll);
     };
     globalListeners.add(listener);
     return () => {
@@ -175,8 +179,26 @@ export function AutomationClient() {
 
       setRestorePackets(packets);
       for (const [k, v] of newJobs) {
-        if (!globalJobs.has(k)) globalJobs.set(k, v);
+        const existing = globalJobs.get(k);
+        if (!existing) {
+          globalJobs.set(k, v);
+        } else if (existing.phase !== "searching") {
+          if (v.phase === "success" && existing.phase === "success") {
+            globalJobs.set(k, {
+              ...existing,
+              commentPosted: existing.commentPosted || v.commentPosted,
+            });
+          } else if (v.phase === "error" && existing.phase === "error") {
+            globalJobs.set(k, {
+              ...existing,
+              unrecoverableTagged: existing.unrecoverableTagged || v.unrecoverableTagged,
+            });
+          } else {
+            globalJobs.set(k, v);
+          }
+        }
       }
+      setJobs(new Map(globalJobs));
       notifyGlobalListeners();
     } catch {
       // ignore
@@ -214,18 +236,20 @@ export function AutomationClient() {
       message: `Are you sure you want to recover ${pendingToRecover.length} packets sequentially? This may take some time.`,
       onConfirm: async () => {
         setConfirmDialog(null);
-        globalIsRecoveringAll = true;
+        gStore.isRecoveringAll = true;
+        setIsRecoveringAll(true);
         notifyGlobalListeners();
         for (const packet of pendingToRecover) {
           // Check if it's still idle (maybe user manually clicked it)
-          const currentJob = globalJobs.get(packet.id);
+          const currentJob = globalJobs.get(packet.id) ?? jobs.get(packet.id);
           if (!currentJob || currentJob.phase === "idle") {
             await runRestore(packet);
             // Small delay
             await new Promise(r => setTimeout(r, 1000));
           }
         }
-        globalIsRecoveringAll = false;
+        gStore.isRecoveringAll = false;
+        setIsRecoveringAll(false);
         notifyGlobalListeners();
       },
       onCancel: () => setConfirmDialog(null)
@@ -254,14 +278,16 @@ export function AutomationClient() {
       message: `Are you sure you want to retry recovering ${notFoundPackets.length} packets that were not found? This may take some time.`,
       onConfirm: async () => {
         setConfirmDialog(null);
-        globalIsRecoveringAll = true;
+        gStore.isRecoveringAll = true;
+        setIsRecoveringAll(true);
         notifyGlobalListeners();
         for (const packet of notFoundPackets) {
           await runRestore(packet);
           // Small delay
           await new Promise(r => setTimeout(r, 1000));
         }
-        globalIsRecoveringAll = false;
+        gStore.isRecoveringAll = false;
+        setIsRecoveringAll(false);
         notifyGlobalListeners();
       },
       onCancel: () => setConfirmDialog(null)
@@ -273,6 +299,7 @@ export function AutomationClient() {
     const key = packet.id;
 
     updateGlobalJobs(key, { phase: "searching" });
+    setJobs(prev => { const next = new Map(prev); next.set(key, { phase: "searching" }); return next; });
 
     const TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes per packet
     const controller = new AbortController();
@@ -300,7 +327,7 @@ export function AutomationClient() {
       }));
 
       if (payload.success) {
-        updateGlobalJobs(key, {
+        const nextState: JobState = {
           phase: "success",
           steps,
           uploadedTo: payload.uploadedTo ?? "",
@@ -308,13 +335,17 @@ export function AutomationClient() {
           packetName: payload.packetName ?? "",
           alreadyUploaded: payload.alreadyUploaded ?? false,
           commentPosted: false,
-        });
+        };
+        updateGlobalJobs(key, nextState);
+        setJobs(prev => { const next = new Map(prev); next.set(key, nextState); return next; });
       } else {
-        updateGlobalJobs(key, {
+        const nextState: JobState = {
           phase: "error",
           steps: steps.length > 0 ? steps : [{ text: `❌ ${payload.error || "Unknown error"}`, type: "error" }],
           error: payload.error || "Unknown error",
-        });
+        };
+        updateGlobalJobs(key, nextState);
+        setJobs(prev => { const next = new Map(prev); next.set(key, nextState); return next; });
       }
     } catch (err: any) {
       clearTimeout(timeoutId);
@@ -322,11 +353,13 @@ export function AutomationClient() {
       const msg = isTimeout
         ? "Search timed out after 3 minutes. The NAS may be slow or the packet is in an unexpected folder. Click Recover to retry."
         : err?.message;
-      updateGlobalJobs(key, {
+      const nextState: JobState = {
         phase: "error",
         steps: [{ text: `❌ ${msg}`, type: "error" }],
         error: msg,
-      });
+      };
+      updateGlobalJobs(key, nextState);
+      setJobs(prev => { const next = new Map(prev); next.set(key, nextState); return next; });
     }
   }
 
@@ -360,9 +393,11 @@ export function AutomationClient() {
         throw new Error(errMsg);
       }
 
-      const existing = globalJobs.get(key);
-      if (existing?.phase === "success") {
-        updateGlobalJobs(key, { ...existing, commentPosted: true });
+      const existing = globalJobs.get(key) ?? job;
+      if (existing.phase === "success") {
+        const nextState: JobState = { ...existing, commentPosted: true };
+        updateGlobalJobs(key, nextState);
+        setJobs(prev => { const next = new Map(prev); next.set(key, nextState); return next; });
       }
     } catch (err: any) {
       alert(`Failed to post comment: ${err?.message}`);
@@ -390,18 +425,21 @@ export function AutomationClient() {
       message: `Are you sure you want to post ${pendingPackets.length} comments sequentially?`,
       onConfirm: async () => {
         setConfirmDialog(null);
-        globalIsPostingAll = true;
+        gStore.isPostingAll = true;
+        setIsPostingAll(true);
         notifyGlobalListeners();
         for (const packet of pendingPackets) {
-          const job = globalJobs.get(packet.id);
-          if (job) {
+          const job = globalJobs.get(packet.id) ?? jobs.get(packet.id);
+          if (job && job.phase === "success" && !job.commentPosted) {
             await postComment(packet, job);
             // Small delay to prevent rate-limiting
             await new Promise(r => setTimeout(r, 800));
           }
         }
-        globalIsPostingAll = false;
+        gStore.isPostingAll = false;
+        setIsPostingAll(false);
         notifyGlobalListeners();
+        await loadRestorePackets();
       },
       onCancel: () => setConfirmDialog(null)
     });
@@ -433,7 +471,9 @@ export function AutomationClient() {
         } catch (_) {}
         alert(`Failed to tag unrecoverable for ${packet.ticketNumber}: ${errMsg}`);
       } else {
-        updateGlobalJobs(key, { ...job, unrecoverableTagged: true });
+        const nextState: JobState = { ...job, unrecoverableTagged: true };
+        updateGlobalJobs(key, nextState);
+        setJobs(prev => { const next = new Map(prev); next.set(key, nextState); return next; });
       }
     } catch (err: any) {
       alert(`Error tagging unrecoverable for ${packet.ticketNumber}: ${err.message}`);
@@ -488,6 +528,7 @@ export function AutomationClient() {
 
   function resetJob(key: string) {
     globalJobs.delete(key);
+    setJobs(prev => { const next = new Map(prev); next.delete(key); return next; });
     notifyGlobalListeners();
   }
 
