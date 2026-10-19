@@ -40,6 +40,12 @@ function classifyStep(s: string): StepLine["type"] {
   return "info";
 }
 
+function isMisamisOriental(p: RestorePacket): boolean {
+  const prov = (p.province || "").toLowerCase().trim();
+  const folder = (p.proLptFolder || "").toLowerCase().trim();
+  return prov.includes("misamis oriental") || folder.includes("misamis oriental");
+}
+
 function StepLog({ steps }: { steps: StepLine[] }) {
   return (
     <div style={{
@@ -96,7 +102,7 @@ export function AutomationClient() {
   const [isRecoveringAll, setIsRecoveringAll] = useState(globalIsRecoveringAll);
   const [isPostingAll, setIsPostingAll] = useState(globalIsPostingAll);
   const [commentingFor, setCommentingFor] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<"pending" | "completed" | "not_found" | "unrecoverable">("pending");
+  const [activeTab, setActiveTab] = useState<"pending" | "completed" | "not_found" | "not_found_other" | "unrecoverable">("pending");
   const [filterProvince, setFilterProvince] = useState("");
   const [sortBy, setSortBy] = useState<"default" | "trn_asc" | "trn_desc">("default");
   const [confirmDialog, setConfirmDialog] = useState<{ title: string; message: string; onConfirm: () => void; onCancel: () => void } | null>(null);
@@ -229,10 +235,10 @@ export function AutomationClient() {
   // ── Recover (search + copy) ──
   
   // Retry all Not Found packets
-  async function retryAllNotFoundPackets() {
+  async function retryAllNotFoundPackets(targetPackets?: RestorePacket[]) {
     if (isRecoveringAll) return;
     
-    let notFoundPackets = restorePackets.filter(p => {
+    let notFoundPackets = targetPackets ?? restorePackets.filter(p => {
       const job = jobs.get(p.id);
       const isUnrecoverable = job?.phase === "error" && job.unrecoverableTagged;
       return job?.phase === "error" && !isUnrecoverable && (job.error?.includes("not found") || p.restorationNotFound);
@@ -495,12 +501,21 @@ export function AutomationClient() {
     return job?.phase === "error" && job.unrecoverableTagged;
   }).length;
   
-  const notFoundPacketsCount = restorePackets.filter(p => {
+  const notFoundMisOrCount = restorePackets.filter(p => {
     const job = jobs.get(p.id);
-    return job?.phase === "error" && !job.unrecoverableTagged && (job.error?.includes("not found") || p.restorationNotFound);
+    const isUnrecoverable = job?.phase === "error" && job.unrecoverableTagged;
+    const isNotFound = job?.phase === "error" && !isUnrecoverable && (job.error?.includes("not found") || p.restorationNotFound);
+    return isNotFound && isMisamisOriental(p);
   }).length;
 
-  const pendingPacketsCount = restorePackets.length - completedPacketsCount - notFoundPacketsCount - unrecoverablePacketsCount;
+  const notFoundOtherCount = restorePackets.filter(p => {
+    const job = jobs.get(p.id);
+    const isUnrecoverable = job?.phase === "error" && job.unrecoverableTagged;
+    const isNotFound = job?.phase === "error" && !isUnrecoverable && (job.error?.includes("not found") || p.restorationNotFound);
+    return isNotFound && !isMisamisOriental(p);
+  }).length;
+
+  const pendingPacketsCount = restorePackets.length - completedPacketsCount - notFoundMisOrCount - notFoundOtherCount - unrecoverablePacketsCount;
 
   const pendingToRecoverCount = restorePackets.filter(p => {
     const job = jobs.get(p.id);
@@ -523,11 +538,13 @@ export function AutomationClient() {
     const isCompleted = job?.phase === "success" && job.commentPosted === true;
     const isUnrecoverable = job?.phase === "error" && job.unrecoverableTagged;
     const isNotFound = job?.phase === "error" && !isUnrecoverable && (job.error?.includes("not found") || p.restorationNotFound);
+    const isMisOr = isMisamisOriental(p);
     
     if (filterProvince && p.province !== filterProvince) return false;
 
     if (activeTab === "completed") return isCompleted;
-    if (activeTab === "not_found") return isNotFound;
+    if (activeTab === "not_found") return isNotFound && isMisOr;
+    if (activeTab === "not_found_other") return isNotFound && !isMisOr;
     if (activeTab === "unrecoverable") return isUnrecoverable;
     return !isCompleted && !isNotFound && !isUnrecoverable; // Pending tab
   }).sort((a, b) => {
@@ -553,8 +570,8 @@ export function AutomationClient() {
           </h2>
           <div style={{ display: "flex", gap: 10 }}>
             
-            {activeTab === "not_found" && (
-              <button className="btn btn-primary" onClick={retryAllNotFoundPackets} disabled={isRecoveringAll || listLoading || notFoundPacketsCount === 0}>
+            {(activeTab === "not_found" || activeTab === "not_found_other") && (
+              <button className="btn btn-primary" onClick={() => retryAllNotFoundPackets(displayPackets)} disabled={isRecoveringAll || listLoading || displayPackets.length === 0}>
                 {isRecoveringAll ? <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> : <RefreshCw size={16} />}
                 {isRecoveringAll ? "Retrying..." : "Retry All"}
               </button>
@@ -631,8 +648,26 @@ export function AutomationClient() {
               alignItems: "center"
             }}
           >
-            No Packet Found
-            <span style={{ background: activeTab === "not_found" ? "var(--danger-light, #fee2e2)" : "var(--border)", color: activeTab === "not_found" ? "var(--danger)" : "var(--muted)", padding: "2px 8px", borderRadius: 12, fontSize: "0.75rem", fontWeight: 600 }}>{notFoundPacketsCount}</span>
+            No Packet Found (MisOr)
+            <span style={{ background: activeTab === "not_found" ? "var(--danger-light, #fee2e2)" : "var(--border)", color: activeTab === "not_found" ? "var(--danger)" : "var(--muted)", padding: "2px 8px", borderRadius: 12, fontSize: "0.75rem", fontWeight: 600 }}>{notFoundMisOrCount}</span>
+          </button>
+          <button 
+            onClick={() => setActiveTab("not_found_other")}
+            style={{ 
+              padding: "8px 12px", 
+              background: "none", 
+              border: "none", 
+              borderBottom: activeTab === "not_found_other" ? "2px solid #ea580c" : "2px solid transparent",
+              color: activeTab === "not_found_other" ? "#ea580c" : "var(--muted)",
+              fontWeight: activeTab === "not_found_other" ? 600 : 400,
+              cursor: "pointer",
+              display: "flex",
+              gap: 8,
+              alignItems: "center"
+            }}
+          >
+            No Packet Found (Other Provinces)
+            <span style={{ background: activeTab === "not_found_other" ? "#ffedd5" : "var(--border)", color: activeTab === "not_found_other" ? "#c2410c" : "var(--muted)", padding: "2px 8px", borderRadius: 12, fontSize: "0.75rem", fontWeight: 600 }}>{notFoundOtherCount}</span>
           </button>
           <button 
             onClick={() => setActiveTab("unrecoverable")}
