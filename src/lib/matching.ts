@@ -17,7 +17,7 @@ function extractTagsFromReplies(replies: any[]): string[] {
   for (const reply of replies) {
     if (!reply.body) continue;
     const r = reply.body.toLowerCase();
-    if (r.includes("available to download") || r.includes("available for download")) tags.add("available_to_download");
+    if (r.includes("available to download") || r.includes("available for download") || r.includes("ready to download") || r.includes("ready for download")) tags.add("available_to_download");
     if (r.includes("backend restoration") || r.includes("for backend restoration") || r.includes("initial registration") || r.includes("locate the physical packet")) tags.add("for_backend_restoration");
     if (r.includes("still processing on the backend") || r.includes("still in process") || r.includes("awaiting") || r.includes("still processing")) tags.add("still_in_process");
     if (r.includes("unrecoverable") || r.includes("re-registration")) tags.add("unrecoverable");

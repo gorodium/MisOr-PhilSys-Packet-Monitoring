@@ -136,10 +136,12 @@ export function AutomationClient() {
         if (!p.ticketId || !p.ticketNumber) return;
 
         const replyLower = (p.latestMatrixReply || "").toLowerCase();
+        const isAvailable = p.matrixTags?.includes("available_to_download") || replyLower.includes("available to download") || replyLower.includes("available for download") || replyLower.includes("ready to download") || replyLower.includes("ready for download");
+        if (isAvailable) return;
+
         const matchInitTrn = (p.latestMatrixReply || "").match(/(?:Initial|NEW)\s+REGISTRATION:\s*(\d{29})/i);
         const resolvedInitialTrn = p.requiredInitialTrn || (matchInitTrn && matchInitTrn[1] && matchInitTrn[1] !== p.packetCode ? matchInitTrn[1] : null);
         const isUnrecoverable = p.matrixTags?.includes("unrecoverable") || replyLower.includes("unrecoverable") || replyLower.includes("re-registration");
-        const isAvailable = p.matrixTags?.includes("available_to_download") || replyLower.includes("available to download") || replyLower.includes("available for download");
 
         packets.push({
           id: p.id,
@@ -161,16 +163,16 @@ export function AutomationClient() {
             error: "Packet not found",
             unrecoverableTagged: true,
           });
-        } else if (p.restorationUploaded || p.restorationCommented || isAvailable) {
+        } else if (p.restorationUploaded || p.restorationCommented) {
           const trnToUse = resolvedInitialTrn || p.packetCode;
           newJobs.set(p.id, {
             phase: "success",
-            steps: [{ text: isAvailable && !p.restorationUploaded ? "✅ ePhilID already available to download" : "✅ Recovered from previous session", type: "ok" }],
+            steps: [{ text: "✅ Recovered from previous session", type: "ok" }],
             uploadedTo: `/Misamis Oriental/ePhilID TRN Concerns/${p.ticketNumber}/${trnToUse}.zip`,
             destFolder: `/Misamis Oriental/ePhilID TRN Concerns/${p.ticketNumber}`,
             packetName: `${trnToUse}.zip`,
             alreadyUploaded: true,
-            commentPosted: p.restorationCommented === true || isAvailable,
+            commentPosted: p.restorationCommented === true,
             isRestored: true,
           });
         } else if (p.restorationNotFound) {

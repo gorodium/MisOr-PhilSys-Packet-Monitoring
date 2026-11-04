@@ -34,7 +34,7 @@ function getRemarksBadges(packet: PacketRow): RemarksBadge[] {
   const tags = packet.matrixTags || [];
   const r = (packet.latestMatrixReply || "").toLowerCase();
 
-  const isAvailable = tags.includes("available_to_download") || r.includes("available to download") || r.includes("available for download");
+  const isAvailable = tags.includes("available_to_download") || r.includes("available to download") || r.includes("available for download") || r.includes("ready to download") || r.includes("ready for download");
 
   if (isAvailable) {
     badges.push({ label: "Available to Download", bg: "#dcfce7", color: "#166534" });
@@ -42,7 +42,7 @@ function getRemarksBadges(packet: PacketRow): RemarksBadge[] {
     if (tags.includes("unrecoverable") || r.includes("unrecoverable") || r.includes("re-registration")) {
       badges.push({ label: "Unrecoverable", bg: "#fee2e2", color: "#991b1b" });
     }
-    if (tags.includes("for_backend_restoration") || packet.restorationCommented || packet.restorationUploaded || r.includes("backend restoration") || r.includes("for backend restoration")) {
+    if (tags.includes("for_backend_restoration") || packet.restorationCommented || packet.restorationUploaded || r.includes("backend restoration") || r.includes("for backend restoration") || r.includes("locate the physical packet")) {
       badges.push({ label: "For Backend Restoration", bg: "#ffedd5", color: "#9a3412" });
     }
     if (tags.includes("still_in_process") || r.includes("still processing on the backend") || r.includes("still in process") || r.includes("awaiting") || r.includes("still processing")) {
@@ -68,7 +68,7 @@ function matchesRemarksFilter(packet: PacketRow, filter: string): boolean {
   
   const r = (packet.latestMatrixReply || "").toLowerCase();
   const tags = packet.matrixTags || [];
-  const isAvailable = tags.includes("available_to_download") || r.includes("available to download") || r.includes("available for download");
+  const isAvailable = tags.includes("available_to_download") || r.includes("available to download") || r.includes("available for download") || r.includes("ready to download") || r.includes("ready for download");
   
   if (filter === "available_to_download") return isAvailable;
   if (isAvailable) {
@@ -80,7 +80,7 @@ function matchesRemarksFilter(packet: PacketRow, filter: string): boolean {
   }
 
   if (filter === "for_backend_restoration") {
-    return tags.includes("for_backend_restoration") || packet.restorationCommented || packet.restorationUploaded || r.includes("backend restoration") || r.includes("for backend restoration");
+    return tags.includes("for_backend_restoration") || packet.restorationCommented || packet.restorationUploaded || r.includes("backend restoration") || r.includes("for backend restoration") || r.includes("locate the physical packet");
   }
   
   if (tags.includes(filter)) return true;
