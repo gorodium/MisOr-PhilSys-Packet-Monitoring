@@ -9,7 +9,7 @@ import { assertRateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
-const MAX_PAGE_SIZE = 500;
+const MAX_PAGE_SIZE = 5000;
 const DEFAULT_PAGE_SIZE = 100;
 
 const packetQuerySchema = z.object({
@@ -100,6 +100,7 @@ export async function GET(request: NextRequest) {
               { matrixTags: { has: "for_backend_restoration" } },
               { latestMatrixReply: { contains: "backend restoration", mode: "insensitive" as const } },
               { latestMatrixReply: { contains: "initial registration", mode: "insensitive" as const } },
+              { latestMatrixReply: { contains: "locate the physical packet", mode: "insensitive" as const } },
               { restorationUploaded: true },
               { restorationCommented: true }
             ]
@@ -162,7 +163,7 @@ export async function GET(request: NextRequest) {
       prisma.packet.count({ 
         where: { 
           AND: [
-            { OR: [{ matrixTags: { has: "for_backend_restoration" } }, { restorationCommented: true }, { restorationUploaded: true }, { latestMatrixReply: { contains: "backend restoration", mode: "insensitive" } }, { latestMatrixReply: { contains: "for backend restoration", mode: "insensitive" } }] },
+            { OR: [{ matrixTags: { has: "for_backend_restoration" } }, { restorationCommented: true }, { restorationUploaded: true }, { latestMatrixReply: { contains: "backend restoration", mode: "insensitive" } }, { latestMatrixReply: { contains: "for backend restoration", mode: "insensitive" } }, { latestMatrixReply: { contains: "locate the physical packet", mode: "insensitive" } }] },
             { NOT: { OR: [{ matrixTags: { has: "available_to_download" } }, { latestMatrixReply: { contains: "available to download", mode: "insensitive" } }, { latestMatrixReply: { contains: "available for download", mode: "insensitive" } }] } }
           ]
         } 

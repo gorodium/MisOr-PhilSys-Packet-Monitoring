@@ -1,6 +1,6 @@
 "use client";
 
-import { HardDriveDownload, RefreshCw, Loader2, CheckCircle, XCircle, MessageSquare, Download } from "lucide-react";
+import { HardDriveDownload, RefreshCw, Loader2, CheckCircle, XCircle, MessageSquare, Download, Search } from "lucide-react";
 import { useEffect, useState, useCallback, Fragment } from "react";
 import * as XLSX from "xlsx";
 
@@ -107,6 +107,7 @@ export function AutomationClient() {
   const [isPostingAll, setIsPostingAll] = useState<boolean>(() => gStore.isPostingAll);
   const [commentingFor, setCommentingFor] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<"pending" | "completed" | "not_found" | "not_found_other" | "unrecoverable">("pending");
+  const [searchTrn, setSearchTrn] = useState("");
   const [filterProvince, setFilterProvince] = useState("");
   const [sortBy, setSortBy] = useState<"default" | "trn_asc" | "trn_desc">("default");
   const [confirmDialog, setConfirmDialog] = useState<{ title: string; message: string; onConfirm: () => void; onCancel: () => void } | null>(null);
@@ -126,13 +127,19 @@ export function AutomationClient() {
   const loadRestorePackets = useCallback(async () => {
     setListLoading(true);
     try {
-      const res = await fetch("/api/packets?status=for_backend_restoration&pageSize=200");
+      const res = await fetch("/api/packets?status=for_backend_restoration&pageSize=5000");
       const data = await res.json();
       const packets: RestorePacket[] = [];
       const newJobs = new Map<string, JobState>();
 
       (data.packets || []).forEach((p: any) => {
         if (!p.ticketId || !p.ticketNumber) return;
+
+        const replyLower = (p.latestMatrixReply || "").toLowerCase();
+        const matchInitTrn = (p.latestMatrixReply || "").match(/(?:Initial|NEW)\s+REGISTRATION:\s*(\d{29})/i);
+        const resolvedInitialTrn = p.requiredInitialTrn || (matchInitTrn && matchInitTrn[1] && matchInitTrn[1] !== p.packetCode ? matchInitTrn[1] : null);
+        const isUnrecoverable = p.matrixTags?.includes("unrecoverable") || replyLower.includes("unrecoverable") || replyLower.includes("re-registration");
+        const isAvailable = p.matrixTags?.includes("available_to_download") || replyLower.includes("available to download") || replyLower.includes("available for download");
 
         packets.push({
           id: p.id,
@@ -142,12 +149,10 @@ export function AutomationClient() {
           latestMatrixReply: p.latestMatrixReply ?? null,
           proLptFolder: p.proLptFolder ?? "",
           province: p.province ?? "",
-          requiredInitialTrn: p.requiredInitialTrn ?? null,
+          requiredInitialTrn: resolvedInitialTrn,
           restorationNotFound: p.restorationNotFound ?? false,
-          unrecoverable: p.matrixTags?.includes("unrecoverable") || (p.latestMatrixReply || "").toLowerCase().includes("unrecoverable") || (p.latestMatrixReply || "").toLowerCase().includes("re-registration"),
+          unrecoverable: isUnrecoverable,
         });
-
-        const isUnrecoverable = p.matrixTags?.includes("unrecoverable") || (p.latestMatrixReply || "").toLowerCase().includes("unrecoverable") || (p.latestMatrixReply || "").toLowerCase().includes("re-registration");
         
         if (isUnrecoverable) {
           newJobs.set(p.id, {
@@ -156,16 +161,16 @@ export function AutomationClient() {
             error: "Packet not found",
             unrecoverableTagged: true,
           });
-        } else if (p.restorationUploaded || p.restorationCommented) {
-          const trnToUse = p.requiredInitialTrn || p.packetCode;
+        } else if (p.restorationUploaded || p.restorationCommented || isAvailable) {
+          const trnToUse = resolvedInitialTrn || p.packetCode;
           newJobs.set(p.id, {
             phase: "success",
-            steps: [{ text: "✅ Recovered from previous session", type: "ok" }],
+            steps: [{ text: isAvailable && !p.restorationUploaded ? "✅ ePhilID already available to download" : "✅ Recovered from previous session", type: "ok" }],
             uploadedTo: `/Misamis Oriental/ePhilID TRN Concerns/${p.ticketNumber}/${trnToUse}.zip`,
             destFolder: `/Misamis Oriental/ePhilID TRN Concerns/${p.ticketNumber}`,
             packetName: `${trnToUse}.zip`,
             alreadyUploaded: true,
-            commentPosted: p.restorationCommented === true,
+            commentPosted: p.restorationCommented === true || isAvailable,
             isRestored: true,
           });
         } else if (p.restorationNotFound) {
@@ -532,38 +537,50 @@ export function AutomationClient() {
     notifyGlobalListeners();
   }
 
-  const completedPacketsCount = restorePackets.filter(p => {
+  const normalizedSearch = searchTrn.trim().replace(/[\s\-_/#]/g, "").toLowerCase();
+  const matchesSearchAndProvince = (p: RestorePacket) => {
+    if (filterProvince && p.province !== filterProvince) return false;
+    if (!normalizedSearch) return true;
+    const code = (p.packetCode || "").replace(/[\s\-_/]/g, "").toLowerCase();
+    const initTrn = (p.requiredInitialTrn || "").replace(/[\s\-_/]/g, "").toLowerCase();
+    const ticket = (p.ticketNumber || "").replace(/[#\s]/g, "").toLowerCase();
+    return code.includes(normalizedSearch) || initTrn.includes(normalizedSearch) || ticket.includes(normalizedSearch);
+  };
+
+  const filteredBasePackets = restorePackets.filter(matchesSearchAndProvince);
+
+  const completedPacketsCount = filteredBasePackets.filter(p => {
     const job = jobs.get(p.id);
     return job?.phase === "success" && job.commentPosted === true;
   }).length;
   
-  const unrecoverablePacketsCount = restorePackets.filter(p => {
+  const unrecoverablePacketsCount = filteredBasePackets.filter(p => {
     const job = jobs.get(p.id);
     return job?.phase === "error" && job.unrecoverableTagged;
   }).length;
   
-  const notFoundMisOrCount = restorePackets.filter(p => {
+  const notFoundMisOrCount = filteredBasePackets.filter(p => {
     const job = jobs.get(p.id);
     const isUnrecoverable = job?.phase === "error" && job.unrecoverableTagged;
     const isNotFound = job?.phase === "error" && !isUnrecoverable && (job.error?.includes("not found") || p.restorationNotFound);
     return isNotFound && isMisamisOriental(p);
   }).length;
 
-  const notFoundOtherCount = restorePackets.filter(p => {
+  const notFoundOtherCount = filteredBasePackets.filter(p => {
     const job = jobs.get(p.id);
     const isUnrecoverable = job?.phase === "error" && job.unrecoverableTagged;
     const isNotFound = job?.phase === "error" && !isUnrecoverable && (job.error?.includes("not found") || p.restorationNotFound);
     return isNotFound && !isMisamisOriental(p);
   }).length;
 
-  const pendingPacketsCount = restorePackets.length - completedPacketsCount - notFoundMisOrCount - notFoundOtherCount - unrecoverablePacketsCount;
+  const pendingPacketsCount = filteredBasePackets.length - completedPacketsCount - notFoundMisOrCount - notFoundOtherCount - unrecoverablePacketsCount;
 
-  const pendingToRecoverCount = restorePackets.filter(p => {
+  const pendingToRecoverCount = filteredBasePackets.filter(p => {
     const job = jobs.get(p.id);
     return !job || job.phase === "idle";
   }).length;
   
-  const pendingToPostCount = restorePackets.filter(p => {
+  const pendingToPostCount = filteredBasePackets.filter(p => {
     const job = jobs.get(p.id);
     return job?.phase === "success" && !job.commentPosted;
   }).length;
@@ -574,14 +591,12 @@ export function AutomationClient() {
   // Render
   // ──────────────────────────────────────────────
 
-  const displayPackets = restorePackets.filter(p => {
+  const displayPackets = filteredBasePackets.filter(p => {
     const job = jobs.get(p.id);
     const isCompleted = job?.phase === "success" && job.commentPosted === true;
     const isUnrecoverable = job?.phase === "error" && job.unrecoverableTagged;
     const isNotFound = job?.phase === "error" && !isUnrecoverable && (job.error?.includes("not found") || p.restorationNotFound);
     const isMisOr = isMisamisOriental(p);
-    
-    if (filterProvince && p.province !== filterProvince) return false;
 
     if (activeTab === "completed") return isCompleted;
     if (activeTab === "not_found") return isNotFound && isMisOr;
@@ -730,7 +745,40 @@ export function AutomationClient() {
           </button>
         </div>
 
-        <div style={{ padding: "0 16px 16px", display: "flex", gap: 16, alignItems: "center", borderBottom: "1px solid var(--border)", marginBottom: 16 }}>
+        <div style={{ padding: "0 16px 16px", display: "flex", gap: 16, alignItems: "center", borderBottom: "1px solid var(--border)", marginBottom: 16, flexWrap: "wrap" }}>
+          <div style={{ position: "relative", flex: "1 1 320px", maxWidth: 420 }}>
+            <Search size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", pointerEvents: "none" }} />
+            <input
+              type="text"
+              className="input"
+              placeholder="Search TRN, Original TRN, or Ticket #..."
+              value={searchTrn}
+              onChange={e => setSearchTrn(e.target.value)}
+              style={{ width: "100%", paddingLeft: 36, paddingRight: searchTrn ? 32 : 12 }}
+            />
+            {searchTrn && (
+              <button
+                type="button"
+                onClick={() => setSearchTrn("")}
+                title="Clear search"
+                style={{
+                  position: "absolute",
+                  right: 8,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "none",
+                  border: "none",
+                  color: "var(--muted)",
+                  cursor: "pointer",
+                  fontSize: "1.1rem",
+                  lineHeight: 1,
+                  padding: "2px 6px"
+                }}
+              >
+                ×
+              </button>
+            )}
+          </div>
           <select 
             className="select" 
             style={{ minWidth: 200 }}

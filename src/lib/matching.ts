@@ -18,7 +18,7 @@ function extractTagsFromReplies(replies: any[]): string[] {
     if (!reply.body) continue;
     const r = reply.body.toLowerCase();
     if (r.includes("available to download") || r.includes("available for download")) tags.add("available_to_download");
-    if (r.includes("backend restoration") || r.includes("for backend restoration") || r.includes("initial registration")) tags.add("for_backend_restoration");
+    if (r.includes("backend restoration") || r.includes("for backend restoration") || r.includes("initial registration") || r.includes("locate the physical packet")) tags.add("for_backend_restoration");
     if (r.includes("still processing on the backend") || r.includes("still in process") || r.includes("awaiting") || r.includes("still processing")) tags.add("still_in_process");
     if (r.includes("unrecoverable") || r.includes("re-registration")) tags.add("unrecoverable");
     if (r.includes("potential duplicate") || r.includes("duplicate match") || r.includes("identified with a potential duplicate")) tags.add("potential_duplicate");
@@ -179,7 +179,7 @@ async function applyPacketMatches(packet: Packet, matches: TicketMatch[]) {
   let requiredInitialTrn = null;
   for (const rep of match.relevantReplies) {
     if (!rep.body) continue;
-    const matchTrn = rep.body.match(/Initial REGISTRATION:\s*(\d+)/i);
+    const matchTrn = rep.body.match(/(?:Initial|NEW)\s+REGISTRATION:\s*(\d{29})/i);
     if (matchTrn && matchTrn[1]) {
       requiredInitialTrn = matchTrn[1];
       break;
@@ -335,8 +335,10 @@ export async function runFullSync() {
             // 2. Extract packets from all replies
             const replies = await adapter.fetchTicketReplies(detailedTicket.matrixTicketId);
             for (const reply of replies) {
+              if (reply.id === "description") continue;
               const replyCodes = extractLikelyPacketCodes(reply.body || "");
-              for (const code of replyCodes) {
+              const targetCodes = replyCodes.length > 0 ? replyCodes : titleBodyCodes;
+              for (const code of targetCodes) {
                 await upsertPacketFromMatrix(code, dbTicket, detailedTicket, reply, MatchType.REPLY);
               }
             }
@@ -400,6 +402,14 @@ async function upsertPacketFromMatrix(
   const replyAuthorToSave = isNewerReply ? reply.author : (existingPacket?.latestMatrixReplyAuthor ?? null);
   const replyDateToSave = isNewerReply ? reply.createdAt : (existingPacket?.latestMatrixReplyDate ?? null);
 
+  let requiredInitialTrn = existingPacket?.requiredInitialTrn ?? null;
+  if (reply?.body) {
+    const matchTrn = reply.body.match(/(?:Initial|NEW)\s+REGISTRATION:\s*(\d{29})/i);
+    if (matchTrn && matchTrn[1]) {
+      requiredInitialTrn = matchTrn[1];
+    }
+  }
+
   // Upsert the packet itself
   const packet = await prisma.packet.upsert({
     where: { normalizedPacketCode: normalized },
@@ -418,6 +428,7 @@ async function upsertPacketFromMatrix(
       latestMatrixReplyAuthor: replyAuthorToSave,
       latestMatrixReplyDate: replyDateToSave,
       matrixTags: mergedTags,
+      requiredInitialTrn,
       lastCheckedAt: new Date()
     },
     update: {
@@ -430,6 +441,7 @@ async function upsertPacketFromMatrix(
       latestMatrixReplyAuthor: replyAuthorToSave,
       latestMatrixReplyDate: replyDateToSave,
       matrixTags: mergedTags,
+      requiredInitialTrn,
       lastCheckedAt: new Date()
     }
   });

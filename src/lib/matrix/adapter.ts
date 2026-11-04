@@ -378,17 +378,23 @@ class HttpMatrixAdapter implements MatrixAdapter {
     packetCode: string
   ): Promise<RelevantReply[]> {
     const normalizedPacketCode = normalizePacketCode(packetCode);
+    const ticketCodes = this.extractPacketCodesFromTicket(ticket).map(normalizePacketCode);
+    const isTicketForThisPacket = ticketCodes.includes(normalizedPacketCode);
     const replies = await this.fetchTicketReplies(ticket.matrixTicketId);
 
     return replies
       .filter((reply) => {
+        if (reply.id === "description") return false;
         const body = reply.body ?? "";
         // Direct substring match (normalised)
         if (normalizePacketCode(body).includes(normalizedPacketCode)) return true;
+        const replyCodes = extractLikelyPacketCodes(body);
         // Match any TRN-like token in the reply that, when normalised, equals the packet
-        return extractLikelyPacketCodes(body).some(
-          (code) => normalizePacketCode(code) === normalizedPacketCode
-        );
+        if (replyCodes.some((code) => normalizePacketCode(code) === normalizedPacketCode)) return true;
+        // If the reply has no TRN codes in its body (e.g., "locate the physical packet of this TRN"),
+        // attribute it to the packet if the ticket itself is for this packet
+        if (replyCodes.length === 0 && isTicketForThisPacket) return true;
+        return false;
       })
       .map((reply) => ({ ...reply, matchedText: reply.body }));
   }
