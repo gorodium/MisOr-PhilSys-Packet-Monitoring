@@ -184,22 +184,13 @@ export async function GET(request: NextRequest) {
     const andClauses: any[] = [];
     if (query.status === "for_backend_restoration") {
       andClauses.push({
-        AND: [
-          {
-            OR: [
-              { matrixTags: { has: "for_backend_restoration" } },
-              { latestMatrixReply: { contains: "backend restoration", mode: "insensitive" as const } },
-              { latestMatrixReply: { contains: "initial registration", mode: "insensitive" as const } },
-              { latestMatrixReply: { contains: "locate the physical packet", mode: "insensitive" as const } },
-              { restorationUploaded: true },
-              { restorationCommented: true }
-            ]
-          },
-          {
-            NOT: {
-              OR: [...AVAILABLE_TO_DOWNLOAD_OR, ...UNRECOVERABLE_OR]
-            }
-          }
+        OR: [
+          { matrixTags: { has: "for_backend_restoration" } },
+          { latestMatrixReply: { contains: "backend restoration", mode: "insensitive" as const } },
+          { latestMatrixReply: { contains: "initial registration", mode: "insensitive" as const } },
+          { latestMatrixReply: { contains: "locate the physical packet", mode: "insensitive" as const } },
+          { restorationUploaded: true },
+          { restorationCommented: true }
         ]
       });
     }

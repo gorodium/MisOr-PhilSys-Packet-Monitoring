@@ -137,11 +137,12 @@ export function AutomationClient() {
 
         const replyLower = (p.latestMatrixReply || "").toLowerCase();
         const isAvailable = p.matrixTags?.includes("available_to_download") || replyLower.includes("available to download") || replyLower.includes("available for download") || replyLower.includes("ready to download") || replyLower.includes("ready for download");
-        if (isAvailable) return;
+        const wasProcessedForRestoration = Boolean(p.restorationUploaded || p.restorationCommented);
+        if (isAvailable && !wasProcessedForRestoration) return;
 
         const matchInitTrn = (p.latestMatrixReply || "").match(/(?:Initial|NEW)\s+REGISTRATION:\s*(\d{29})/i);
         const resolvedInitialTrn = p.requiredInitialTrn || (matchInitTrn && matchInitTrn[1] && matchInitTrn[1] !== p.packetCode ? matchInitTrn[1] : null);
-        const isUnrecoverable = p.matrixTags?.includes("unrecoverable") || replyLower.includes("unrecoverable") || replyLower.includes("re-registration");
+        const isUnrecoverable = !isAvailable && (p.matrixTags?.includes("unrecoverable") || replyLower.includes("unrecoverable") || replyLower.includes("re-registration"));
 
         packets.push({
           id: p.id,
@@ -163,7 +164,7 @@ export function AutomationClient() {
             error: "Packet not found",
             unrecoverableTagged: true,
           });
-        } else if (p.restorationUploaded || p.restorationCommented) {
+        } else if (wasProcessedForRestoration) {
           const trnToUse = resolvedInitialTrn || p.packetCode;
           newJobs.set(p.id, {
             phase: "success",
@@ -172,7 +173,7 @@ export function AutomationClient() {
             destFolder: `/Misamis Oriental/ePhilID TRN Concerns/${p.ticketNumber}`,
             packetName: `${trnToUse}.zip`,
             alreadyUploaded: true,
-            commentPosted: p.restorationCommented === true,
+            commentPosted: p.restorationCommented === true || isAvailable,
             isRestored: true,
           });
         } else if (p.restorationNotFound) {
