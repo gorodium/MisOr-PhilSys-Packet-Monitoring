@@ -16,9 +16,97 @@ const packetQuerySchema = z.object({
   search: z.string().optional(),
   category: z.string().optional(),
   status: z.string().optional(),
+  remarks: z.string().optional(),
   page: z.coerce.number().int().min(1).optional().default(1),
   pageSize: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).optional().default(DEFAULT_PAGE_SIZE)
 });
+
+const AVAILABLE_TO_DOWNLOAD_OR = [
+  { matrixTags: { has: "available_to_download" } },
+  { latestMatrixReply: { contains: "available to download", mode: "insensitive" as const } },
+  { latestMatrixReply: { contains: "available for download", mode: "insensitive" as const } },
+  { latestMatrixReply: { contains: "ready to download", mode: "insensitive" as const } },
+  { latestMatrixReply: { contains: "ready for download", mode: "insensitive" as const } }
+];
+
+const UNRECOVERABLE_OR = [
+  { matrixTags: { has: "unrecoverable" } },
+  { latestMatrixReply: { contains: "unrecoverable", mode: "insensitive" as const } },
+  { latestMatrixReply: { contains: "re-registration", mode: "insensitive" as const } }
+];
+
+function buildRemarksWhere(remarks: string | undefined) {
+  if (!remarks) return undefined;
+  switch (remarks) {
+    case "available_to_download":
+      return { OR: AVAILABLE_TO_DOWNLOAD_OR };
+    case "unrecoverable":
+      return {
+        AND: [
+          { OR: UNRECOVERABLE_OR },
+          { NOT: { OR: AVAILABLE_TO_DOWNLOAD_OR } }
+        ]
+      };
+    case "for_backend_restoration":
+      return {
+        AND: [
+          {
+            OR: [
+              { matrixTags: { has: "for_backend_restoration" } },
+              { restorationCommented: true },
+              { restorationUploaded: true },
+              { latestMatrixReply: { contains: "backend restoration", mode: "insensitive" as const } },
+              { latestMatrixReply: { contains: "for backend restoration", mode: "insensitive" as const } },
+              { latestMatrixReply: { contains: "locate the physical packet", mode: "insensitive" as const } }
+            ]
+          },
+          { NOT: { OR: [...AVAILABLE_TO_DOWNLOAD_OR, ...UNRECOVERABLE_OR] } }
+        ]
+      };
+    case "still_in_process":
+      return {
+        AND: [
+          {
+            OR: [
+              { matrixTags: { has: "still_in_process" } },
+              { latestMatrixReply: { contains: "still processing on the backend", mode: "insensitive" as const } },
+              { latestMatrixReply: { contains: "still in process", mode: "insensitive" as const } },
+              { latestMatrixReply: { contains: "awaiting", mode: "insensitive" as const } },
+              { latestMatrixReply: { contains: "still processing", mode: "insensitive" as const } }
+            ]
+          },
+          { NOT: { OR: AVAILABLE_TO_DOWNLOAD_OR } }
+        ]
+      };
+    case "potential_duplicate":
+      return {
+        OR: [
+          { matrixTags: { has: "potential_duplicate" } },
+          { latestMatrixReply: { contains: "potential duplicate", mode: "insensitive" as const } },
+          { latestMatrixReply: { contains: "duplicate match", mode: "insensitive" as const } },
+          { latestMatrixReply: { contains: "identified with a potential duplicate", mode: "insensitive" as const } }
+        ]
+      };
+    case "biometrics_issue":
+      return {
+        OR: [
+          { matrixTags: { has: "biometrics_issue" } },
+          { latestMatrixReply: { contains: "biometrics", mode: "insensitive" as const } },
+          { latestMatrixReply: { contains: "biometric", mode: "insensitive" as const } }
+        ]
+      };
+    case "authentication_failed":
+      return {
+        OR: [
+          { matrixTags: { has: "authentication_failed" } },
+          { latestMatrixReply: { contains: "individual authentication", mode: "insensitive" as const } },
+          { latestMatrixReply: { contains: "authentication was unsuccessful", mode: "insensitive" as const } }
+        ]
+      };
+    default:
+      return undefined;
+  }
+}
 
 function parseStatus(value: string | undefined) {
   if (!value) {
@@ -92,35 +180,36 @@ export async function GET(request: NextRequest) {
       matchingTrns = matchingReqs.map(r => r.trn);
     }
 
+    const remarksWhere = buildRemarksWhere(query.remarks);
+    const andClauses: any[] = [];
+    if (query.status === "for_backend_restoration") {
+      andClauses.push({
+        AND: [
+          {
+            OR: [
+              { matrixTags: { has: "for_backend_restoration" } },
+              { latestMatrixReply: { contains: "backend restoration", mode: "insensitive" as const } },
+              { latestMatrixReply: { contains: "initial registration", mode: "insensitive" as const } },
+              { latestMatrixReply: { contains: "locate the physical packet", mode: "insensitive" as const } },
+              { restorationUploaded: true },
+              { restorationCommented: true }
+            ]
+          },
+          {
+            NOT: {
+              OR: [...AVAILABLE_TO_DOWNLOAD_OR, ...UNRECOVERABLE_OR]
+            }
+          }
+        ]
+      });
+    }
+    if (remarksWhere) {
+      andClauses.push(remarksWhere);
+    }
+
     const where = {
       ...(status ? { syncStatus: status } : {}),
-      ...(query.status === "for_backend_restoration"
-        ? {
-            AND: [
-              {
-                OR: [
-                  { matrixTags: { has: "for_backend_restoration" } },
-                  { latestMatrixReply: { contains: "backend restoration", mode: "insensitive" as const } },
-                  { latestMatrixReply: { contains: "initial registration", mode: "insensitive" as const } },
-                  { latestMatrixReply: { contains: "locate the physical packet", mode: "insensitive" as const } },
-                  { restorationUploaded: true },
-                  { restorationCommented: true }
-                ]
-              },
-              {
-                NOT: {
-                  OR: [
-                    { matrixTags: { has: "available_to_download" } },
-                    { latestMatrixReply: { contains: "available to download", mode: "insensitive" as const } },
-                    { latestMatrixReply: { contains: "available for download", mode: "insensitive" as const } },
-                    { latestMatrixReply: { contains: "ready to download", mode: "insensitive" as const } },
-                    { latestMatrixReply: { contains: "ready for download", mode: "insensitive" as const } }
-                  ]
-                }
-              }
-            ]
-          }
-        : {}),
+      ...(andClauses.length > 0 ? { AND: andClauses } : {}),
       ...(category ? { issueCategory: category } : {}),
       ...(query.search
         ? {
@@ -179,7 +268,7 @@ export async function GET(request: NextRequest) {
         where: { 
           AND: [
             { OR: [{ matrixTags: { has: "for_backend_restoration" } }, { restorationCommented: true }, { restorationUploaded: true }, { latestMatrixReply: { contains: "backend restoration", mode: "insensitive" } }, { latestMatrixReply: { contains: "for backend restoration", mode: "insensitive" } }, { latestMatrixReply: { contains: "locate the physical packet", mode: "insensitive" } }] },
-            { NOT: { OR: [{ matrixTags: { has: "available_to_download" } }, { latestMatrixReply: { contains: "available to download", mode: "insensitive" } }, { latestMatrixReply: { contains: "available for download", mode: "insensitive" } }, { latestMatrixReply: { contains: "ready to download", mode: "insensitive" } }, { latestMatrixReply: { contains: "ready for download", mode: "insensitive" } }] } }
+            { NOT: { OR: [...AVAILABLE_TO_DOWNLOAD_OR, ...UNRECOVERABLE_OR] } }
           ]
         } 
       }),
@@ -187,15 +276,22 @@ export async function GET(request: NextRequest) {
         where: { 
           AND: [
             { OR: [{ matrixTags: { has: "still_in_process" } }, { latestMatrixReply: { contains: "still processing on the backend", mode: "insensitive" } }, { latestMatrixReply: { contains: "still in process", mode: "insensitive" } }, { latestMatrixReply: { contains: "awaiting", mode: "insensitive" } }, { latestMatrixReply: { contains: "still processing", mode: "insensitive" } }] },
-            { NOT: { OR: [{ matrixTags: { has: "available_to_download" } }, { latestMatrixReply: { contains: "available to download", mode: "insensitive" } }, { latestMatrixReply: { contains: "available for download", mode: "insensitive" } }, { latestMatrixReply: { contains: "ready to download", mode: "insensitive" } }, { latestMatrixReply: { contains: "ready for download", mode: "insensitive" } }] } }
+            { NOT: { OR: AVAILABLE_TO_DOWNLOAD_OR } }
           ]
         } 
       }),
-      prisma.packet.count({ where: { OR: [{ matrixTags: { has: "available_to_download" } }, { latestMatrixReply: { contains: "available to download", mode: "insensitive" } }, { latestMatrixReply: { contains: "available for download", mode: "insensitive" } }, { latestMatrixReply: { contains: "ready to download", mode: "insensitive" } }, { latestMatrixReply: { contains: "ready for download", mode: "insensitive" } }] } }),
+      prisma.packet.count({ where: { OR: AVAILABLE_TO_DOWNLOAD_OR } }),
       prisma.packet.count({ where: { OR: [{ matrixTags: { has: "potential_duplicate" } }, { latestMatrixReply: { contains: "potential duplicate", mode: "insensitive" } }, { latestMatrixReply: { contains: "duplicate match", mode: "insensitive" } }, { latestMatrixReply: { contains: "identified with a potential duplicate", mode: "insensitive" } }] } }),
       prisma.packet.count({ where: { OR: [{ matrixTags: { has: "biometrics_issue" } }, { latestMatrixReply: { contains: "biometrics", mode: "insensitive" } }, { latestMatrixReply: { contains: "biometric", mode: "insensitive" } }] } }),
       prisma.packet.count({ where: { OR: [{ matrixTags: { has: "authentication_failed" } }, { latestMatrixReply: { contains: "individual authentication", mode: "insensitive" } }, { latestMatrixReply: { contains: "authentication was unsuccessful", mode: "insensitive" } }] } }),
-      prisma.packet.count({ where: { OR: [{ matrixTags: { has: "unrecoverable" } }, { latestMatrixReply: { contains: "unrecoverable", mode: "insensitive" } }, { latestMatrixReply: { contains: "re-registration", mode: "insensitive" } }] } })
+      prisma.packet.count({ 
+        where: { 
+          AND: [
+            { OR: UNRECOVERABLE_OR },
+            { NOT: { OR: AVAILABLE_TO_DOWNLOAD_OR } }
+          ]
+        } 
+      })
     ]);
 
     const totalPages = Math.max(1, Math.ceil(filteredTotal / query.pageSize));

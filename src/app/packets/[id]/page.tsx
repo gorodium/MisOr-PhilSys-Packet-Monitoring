@@ -53,11 +53,45 @@ export default async function PacketDetailPage({ params }: { params: Promise<{ i
   // Prefer the filing request creation date (when admin filed it), fallback to matrix ticket creation
   const filedInMatrixDate = filingRequest?.createdAt ?? packet.matrixTicket?.createdAtMatrix ?? null;
 
+  const tags = packet.matrixTags || [];
+  const replyLower = (packet.latestMatrixReply || "").toLowerCase();
+  const isAvailable =
+    tags.includes("available_to_download") ||
+    replyLower.includes("available to download") ||
+    replyLower.includes("available for download") ||
+    replyLower.includes("ready to download") ||
+    replyLower.includes("ready for download");
+  const isUnrecoverable =
+    !isAvailable &&
+    (tags.includes("unrecoverable") ||
+      replyLower.includes("unrecoverable") ||
+      replyLower.includes("re-registration"));
+
   return (
     <>
       <header className="page-header">
         <div>
-          <h1 className="page-title">{packet.normalizedPacketCode}</h1>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+            <h1 className="page-title" style={isUnrecoverable ? { color: "#dc2626" } : undefined}>
+              {packet.normalizedPacketCode}
+            </h1>
+            {isUnrecoverable && (
+              <span
+                style={{
+                  display: "inline-block",
+                  padding: "3px 10px",
+                  borderRadius: "9999px",
+                  fontSize: "0.75rem",
+                  fontWeight: 700,
+                  backgroundColor: "#fee2e2",
+                  color: "#991b1b",
+                  border: "1px solid #fca5a5"
+                }}
+              >
+                UNRECOVERABLE / RE-REGISTRATION
+              </span>
+            )}
+          </div>
           <p className="page-kicker">Source row {packet.sourceSheetRowNumber}</p>
         </div>
         <StatusBadge status={packet.syncStatus} label={STATUS_LABELS[packet.syncStatus]} />
@@ -65,9 +99,11 @@ export default async function PacketDetailPage({ params }: { params: Promise<{ i
 
       {/* Main info grid */}
       <section className="detail-grid">
-        <div className="detail-item">
+        <div className="detail-item" style={isUnrecoverable ? { borderColor: "#fca5a5", backgroundColor: "#fef2f2" } : undefined}>
           <div className="detail-label">Packet Code</div>
-          <div className="detail-value mono">{packet.normalizedPacketCode}</div>
+          <div className="detail-value mono" style={isUnrecoverable ? { color: "#dc2626" } : undefined}>
+            {packet.normalizedPacketCode}
+          </div>
         </div>
         <div className="detail-item">
           <div className="detail-label">Issue Category</div>

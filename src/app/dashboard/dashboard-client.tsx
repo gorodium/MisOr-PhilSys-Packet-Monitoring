@@ -29,6 +29,19 @@ type RemarksBadge = {
   color: string;
 };
 
+function isPacketUnrecoverable(packet: PacketRow): boolean {
+  const tags = packet.matrixTags || [];
+  const r = (packet.latestMatrixReply || "").toLowerCase();
+  const isAvailable =
+    tags.includes("available_to_download") ||
+    r.includes("available to download") ||
+    r.includes("available for download") ||
+    r.includes("ready to download") ||
+    r.includes("ready for download");
+  if (isAvailable) return false;
+  return tags.includes("unrecoverable") || r.includes("unrecoverable") || r.includes("re-registration");
+}
+
 function getRemarksBadges(packet: PacketRow): RemarksBadge[] {
   const badges: RemarksBadge[] = [];
   const tags = packet.matrixTags || [];
@@ -39,10 +52,9 @@ function getRemarksBadges(packet: PacketRow): RemarksBadge[] {
   if (isAvailable) {
     badges.push({ label: "Available to Download", bg: "#dcfce7", color: "#166534" });
   } else {
-    if (tags.includes("unrecoverable") || r.includes("unrecoverable") || r.includes("re-registration")) {
+    if (isPacketUnrecoverable(packet)) {
       badges.push({ label: "Unrecoverable", bg: "#fee2e2", color: "#991b1b" });
-    }
-    if (tags.includes("for_backend_restoration") || packet.restorationCommented || packet.restorationUploaded || r.includes("backend restoration") || r.includes("for backend restoration") || r.includes("locate the physical packet")) {
+    } else if (tags.includes("for_backend_restoration") || packet.restorationCommented || packet.restorationUploaded || r.includes("backend restoration") || r.includes("for backend restoration") || r.includes("locate the physical packet")) {
       badges.push({ label: "For Backend Restoration", bg: "#ffedd5", color: "#9a3412" });
     }
     if (tags.includes("still_in_process") || r.includes("still processing on the backend") || r.includes("still in process") || r.includes("awaiting") || r.includes("still processing")) {
@@ -76,10 +88,11 @@ function matchesRemarksFilter(packet: PacketRow, filter: string): boolean {
   }
   
   if (filter === "unrecoverable") {
-    return tags.includes("unrecoverable") || r.includes("unrecoverable") || r.includes("re-registration");
+    return isPacketUnrecoverable(packet);
   }
 
   if (filter === "for_backend_restoration") {
+    if (isPacketUnrecoverable(packet)) return false;
     return tags.includes("for_backend_restoration") || packet.restorationCommented || packet.restorationUploaded || r.includes("backend restoration") || r.includes("for backend restoration") || r.includes("locate the physical packet");
   }
   
@@ -143,6 +156,7 @@ type PacketResponse = {
     potentialDuplicate?: number;
     biometricsIssue?: number;
     authenticationFailed?: number;
+    unrecoverable?: number;
   };
   lastSyncedAt: string | null;
 };
@@ -150,7 +164,7 @@ type PacketResponse = {
 const emptyResponse: PacketResponse = {
   packets: [],
   pagination: { page: 1, pageSize: PAGE_SIZE, total: 0, totalPages: 1 },
-  counts: { total: 0, filed: 0, notFiled: 0, needsReview: 0, withLatestReply: 0, errors: 0, pendingFilingRequests: 0, totalTicketsFiled: 0, forBackendRestoration: 0, stillInProcess: 0, availableToDownload: 0, potentialDuplicate: 0, biometricsIssue: 0, authenticationFailed: 0 },
+  counts: { total: 0, filed: 0, notFiled: 0, needsReview: 0, withLatestReply: 0, errors: 0, pendingFilingRequests: 0, totalTicketsFiled: 0, forBackendRestoration: 0, stillInProcess: 0, availableToDownload: 0, potentialDuplicate: 0, biometricsIssue: 0, authenticationFailed: 0, unrecoverable: 0 },
   lastSyncedAt: null
 };
 
@@ -207,10 +221,11 @@ export function DashboardClient({ isAdmin = false }: { isAdmin?: boolean }) {
     if (search) params.set("search", search);
     if (category !== "All") params.set("category", category);
     if (status) params.set("status", status);
+    if (remarksFilter) params.set("remarks", remarksFilter);
     params.set("page", String(page));
     params.set("pageSize", String(PAGE_SIZE));
     return params.toString();
-  }, [category, search, status, page]);
+  }, [category, search, status, remarksFilter, page]);
 
   const loadPackets = useCallback(async () => {
     setLoading(true);
@@ -273,12 +288,13 @@ export function DashboardClient({ isAdmin = false }: { isAdmin?: boolean }) {
   ];
 
   const tagKpis = [
-    { label: "For Backend Restoration", value: counts.forBackendRestoration ?? 0, color: "#d97706", icon: <ArchiveRestore size={16} /> },
-    { label: "Still in Process", value: counts.stillInProcess ?? 0, color: "#2563eb", icon: <Clock size={16} /> },
-    { label: "Available to Download", value: counts.availableToDownload ?? 0, color: "#16a34a", icon: <Download size={16} /> },
-    { label: "Potential Duplicate", value: counts.potentialDuplicate ?? 0, color: "#ea580c", icon: <Copy size={16} /> },
-    { label: "Biometrics Issue", value: counts.biometricsIssue ?? 0, color: "#dc2626", isError: true, icon: <Fingerprint size={16} /> },
-    { label: "Authentication Failed", value: counts.authenticationFailed ?? 0, color: "#991b1b", isError: true, icon: <UserX size={16} /> }
+    { label: "For Backend Restoration", value: counts.forBackendRestoration ?? 0, color: "#d97706", icon: <ArchiveRestore size={16} />, filterValue: "for_backend_restoration" },
+    { label: "Still in Process", value: counts.stillInProcess ?? 0, color: "#2563eb", icon: <Clock size={16} />, filterValue: "still_in_process" },
+    { label: "Available to Download", value: counts.availableToDownload ?? 0, color: "#16a34a", icon: <Download size={16} />, filterValue: "available_to_download" },
+    { label: "Unrecoverable", value: counts.unrecoverable ?? 0, color: "#dc2626", isError: true, icon: <XCircle size={16} />, filterValue: "unrecoverable" },
+    { label: "Potential Duplicate", value: counts.potentialDuplicate ?? 0, color: "#ea580c", icon: <Copy size={16} />, filterValue: "potential_duplicate" },
+    { label: "Biometrics Issue", value: counts.biometricsIssue ?? 0, color: "#dc2626", isError: true, icon: <Fingerprint size={16} />, filterValue: "biometrics_issue" },
+    { label: "Authentication Failed", value: counts.authenticationFailed ?? 0, color: "#991b1b", isError: true, icon: <UserX size={16} />, filterValue: "authentication_failed" }
   ];
 
   return (
@@ -308,23 +324,31 @@ export function DashboardClient({ isAdmin = false }: { isAdmin?: boolean }) {
       <section className="kpi-grid secondary-grid" aria-label="Tag counts">
         {tagKpis.map((kpi) => {
           const isActive = kpi.value > 0;
+          const isSelected = remarksFilter === kpi.filterValue;
           return (
             <div 
               className="kpi-card" 
               key={kpi.label} 
+              onClick={() => {
+                setRemarksFilter(prev => prev === kpi.filterValue ? "" : kpi.filterValue);
+                setPage(1);
+              }}
+              title={`Filter by ${kpi.label}`}
               style={{ 
-                backgroundColor: isActive ? `${kpi.color}10` : "var(--surface)",
-                borderColor: isActive ? `${kpi.color}40` : "var(--border)"
+                cursor: "pointer",
+                backgroundColor: isSelected ? `${kpi.color}1c` : isActive ? `${kpi.color}10` : "var(--surface)",
+                borderColor: isSelected ? kpi.color : isActive ? `${kpi.color}40` : "var(--border)",
+                boxShadow: isSelected ? `0 0 0 2px ${kpi.color}30` : undefined
               }}
             >
-              <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "4px", backgroundColor: isActive ? kpi.color : "transparent" }} />
+              <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "4px", backgroundColor: isActive || isSelected ? kpi.color : "transparent" }} />
               <div className="kpi-label" style={{ color: isActive && kpi.isError ? "var(--foreground)" : "var(--muted)" }}>
                 <span style={{ color: isActive ? kpi.color : "var(--muted)", display: "flex" }}>
                   {kpi.icon}
                 </span>
                 {kpi.label}
               </div>
-              <div className="kpi-value">{kpi.value}</div>
+              <div className="kpi-value" style={kpi.filterValue === "unrecoverable" && isActive ? { color: "#dc2626" } : undefined}>{kpi.value}</div>
             </div>
           );
         })}
@@ -364,7 +388,7 @@ export function DashboardClient({ isAdmin = false }: { isAdmin?: boolean }) {
           ))}
         </select>
         {search || status || remarksFilter ? (
-          <button className="btn btn-outline" onClick={() => { setSearch(""); setStatus(""); setRemarksFilter(""); setPage(1); }} disabled={loading} style={{ height: "36px", display: "flex", alignItems: "center", gap: "6px" }}>
+          <button className="btn btn-outline" onClick={() => { setSearchInput(""); setSearch(""); setStatus(""); setRemarksFilter(""); setPage(1); }} disabled={loading} style={{ height: "36px", display: "flex", alignItems: "center", gap: "6px" }}>
             <XCircle size={14} />
             Clear Filter
           </button>
@@ -399,17 +423,21 @@ export function DashboardClient({ isAdmin = false }: { isAdmin?: boolean }) {
             <tbody>
               {data.packets.filter(packet => matchesRemarksFilter(packet, remarksFilter)).map((packet) => {
                 const badges = getRemarksBadges(packet);
+                const isUnrecoverable = isPacketUnrecoverable(packet);
                 return (
                 <tr
                   key={packet.id}
                   className="clickable-row"
                   onClick={() => router.push(`/packets/${packet.id}`)}
-                  title="Open packet details"
+                  title={isUnrecoverable ? "Unrecoverable packet — Open details" : "Open packet details"}
+                  style={isUnrecoverable ? { backgroundColor: "rgba(254, 226, 226, 0.35)" } : undefined}
                 >
-                  <td>
-                    <strong className="mono">{packet.requiredInitialTrn || packet.normalizedPacketCode}</strong>
+                  <td style={isUnrecoverable ? { borderLeft: "4px solid #dc2626" } : undefined}>
+                    <strong className="mono" style={isUnrecoverable ? { color: "#dc2626", fontWeight: 700 } : undefined}>
+                      {packet.requiredInitialTrn || packet.normalizedPacketCode}
+                    </strong>
                     {packet.requiredInitialTrn && (
-                      <div className="muted" style={{ fontSize: "0.75rem", marginTop: "2px" }}>
+                      <div className="muted" style={{ fontSize: "0.75rem", marginTop: "2px", ...(isUnrecoverable ? { color: "#dc2626", fontWeight: 600 } : {}) }}>
                         Original: {packet.normalizedPacketCode}
                       </div>
                     )}
@@ -462,7 +490,7 @@ export function DashboardClient({ isAdmin = false }: { isAdmin?: boolean }) {
               })}
               {!loading && data.packets.filter(p => matchesRemarksFilter(p, remarksFilter)).length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="muted">
+                  <td colSpan={6} className="muted">
                     No packets match the current filters.
                   </td>
                 </tr>
