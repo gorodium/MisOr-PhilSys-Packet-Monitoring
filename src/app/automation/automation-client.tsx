@@ -23,11 +23,13 @@ type RestorePacket = {
 
 type StepLine = { text: string; type: "info" | "ok" | "error" | "warn" };
 
+type TabType = "pending" | "completed" | "not_found" | "not_found_other" | "unrecoverable";
+
 type JobState =
-  | { phase: "idle" }
-  | { phase: "searching" }
-  | { phase: "success"; steps: StepLine[]; uploadedTo: string; destFolder: string; packetName: string; commentPosted: boolean; alreadyUploaded: boolean; isRestored?: boolean }
-  | { phase: "error"; steps: StepLine[]; error: string; unrecoverableTagged?: boolean };
+  | { phase: "idle"; originTab?: TabType }
+  | { phase: "searching"; originTab?: TabType }
+  | { phase: "success"; steps: StepLine[]; uploadedTo: string; destFolder: string; packetName: string; commentPosted: boolean; alreadyUploaded: boolean; isRestored?: boolean; originTab?: TabType }
+  | { phase: "error"; steps: StepLine[]; error: string; unrecoverableTagged?: boolean; originTab?: TabType };
 
 // ──────────────────────────────────────────────
 // Helpers
@@ -44,6 +46,25 @@ function isMisamisOriental(p: RestorePacket): boolean {
   const prov = (p.province || "").toLowerCase().trim();
   const folder = (p.proLptFolder || "").toLowerCase().trim();
   return prov.includes("misamis oriental") || folder.includes("misamis oriental");
+}
+
+function getPacketTab(p: RestorePacket, job: JobState | undefined): TabType {
+  if (job?.phase === "success" && job.commentPosted === true) {
+    return "completed";
+  }
+  if (job?.phase === "error" && job.unrecoverableTagged) {
+    return "unrecoverable";
+  }
+  if (job?.phase === "searching" || (job?.phase === "success" && !job.commentPosted)) {
+    if (job.originTab === "not_found") return "not_found";
+    if (job.originTab === "not_found_other") return "not_found_other";
+    return "pending";
+  }
+  if (job?.phase === "error" && !job.unrecoverableTagged && (job.error?.includes("not found") || p.restorationNotFound || job.originTab === "not_found" || job.originTab === "not_found_other")) {
+    if (job.originTab === "not_found" || job.originTab === "not_found_other") return job.originTab;
+    return isMisamisOriental(p) ? "not_found" : "not_found_other";
+  }
+  return "pending";
 }
 
 function StepLog({ steps }: { steps: StepLine[] }) {
@@ -163,9 +184,11 @@ export function AutomationClient() {
             steps: [{ text: "❌ Marked as Unrecoverable", type: "error" }],
             error: "Packet not found",
             unrecoverableTagged: true,
+            originTab: "unrecoverable",
           });
         } else if (wasProcessedForRestoration) {
           const trnToUse = resolvedInitialTrn || p.packetCode;
+          const isCompleted = p.restorationCommented === true || isAvailable;
           newJobs.set(p.id, {
             phase: "success",
             steps: [{ text: "✅ Recovered from previous session", type: "ok" }],
@@ -173,14 +196,28 @@ export function AutomationClient() {
             destFolder: `/Misamis Oriental/ePhilID TRN Concerns/${p.ticketNumber}`,
             packetName: `${trnToUse}.zip`,
             alreadyUploaded: true,
-            commentPosted: p.restorationCommented === true || isAvailable,
+            commentPosted: isCompleted,
             isRestored: true,
+            originTab: isCompleted ? "completed" : "pending",
           });
         } else if (p.restorationNotFound) {
+          const tempPkt: RestorePacket = {
+            id: p.id,
+            packetCode: p.packetCode,
+            ticketId: p.ticketId,
+            ticketNumber: p.ticketNumber,
+            latestMatrixReply: p.latestMatrixReply ?? null,
+            proLptFolder: p.proLptFolder ?? "",
+            province: p.province ?? "",
+            requiredInitialTrn: resolvedInitialTrn,
+            restorationNotFound: true,
+            unrecoverable: false,
+          };
           newJobs.set(p.id, {
             phase: "error",
             steps: [{ text: "❌ Packet not found on any NAS.", type: "error" }],
             error: "Packet not found on any NAS.",
+            originTab: isMisamisOriental(tempPkt) ? "not_found" : "not_found_other",
           });
         }
       });
@@ -221,9 +258,9 @@ export function AutomationClient() {
   
   async function recoverAllPendingPackets() {
     if (isRecoveringAll) return;
-    let pendingToRecover = restorePackets.filter(p => {
+    let pendingToRecover = filteredBasePackets.filter(p => {
       const job = jobs.get(p.id);
-      return !job || job.phase === "idle";
+      return getPacketTab(p, job) === "pending" && (!job || job.phase === "idle");
     });
 
     pendingToRecover.sort((a, b) => {
@@ -239,19 +276,21 @@ export function AutomationClient() {
       return;
     }
 
+    const snapshot = [...pendingToRecover];
+
     setConfirmDialog({
       title: "Confirm Recovery",
-      message: `Are you sure you want to recover ${pendingToRecover.length} packets sequentially? This may take some time.`,
+      message: `Are you sure you want to recover ${snapshot.length} packets in the Pending tab sequentially? This may take some time.`,
       onConfirm: async () => {
         setConfirmDialog(null);
         gStore.isRecoveringAll = true;
         setIsRecoveringAll(true);
         notifyGlobalListeners();
-        for (const packet of pendingToRecover) {
+        for (const packet of snapshot) {
           // Check if it's still idle (maybe user manually clicked it)
           const currentJob = globalJobs.get(packet.id) ?? jobs.get(packet.id);
           if (!currentJob || currentJob.phase === "idle") {
-            await runRestore(packet);
+            await runRestore(packet, "pending");
             // Small delay
             await new Promise(r => setTimeout(r, 1000));
           }
@@ -266,31 +305,42 @@ export function AutomationClient() {
 
   // ── Recover (search + copy) ──
   
-  // Retry all Not Found packets
+  // Retry all packets in the currently active tab
   async function retryAllNotFoundPackets(targetPackets?: RestorePacket[]) {
     if (isRecoveringAll) return;
     
-    let notFoundPackets = targetPackets ?? restorePackets.filter(p => {
+    const currentTab = activeTab;
+    const baseList = targetPackets ?? displayPackets;
+    const notFoundPackets = [...baseList].filter(p => {
       const job = jobs.get(p.id);
-      const isUnrecoverable = job?.phase === "error" && job.unrecoverableTagged;
-      return job?.phase === "error" && !isUnrecoverable && (job.error?.includes("not found") || p.restorationNotFound);
+      if (job?.phase === "searching") return false;
+      if (job?.phase === "success") return false;
+      if (job?.phase === "error" && job.unrecoverableTagged) return false;
+      return true;
     });
 
     if (notFoundPackets.length === 0) {
-      alert("No 'Not Found' packets to retry.");
+      alert("No failed packets to retry in this tab.");
       return;
     }
 
+    const tabLabel =
+      currentTab === "not_found"
+        ? "No Packet Found (MisOr)"
+        : currentTab === "not_found_other"
+          ? "No Packet Found (Other Provinces)"
+          : "current";
+
     setConfirmDialog({
       title: "Confirm Retry All",
-      message: `Are you sure you want to retry recovering ${notFoundPackets.length} packets that were not found? This may take some time.`,
+      message: `Are you sure you want to retry uploading ${notFoundPackets.length} packet(s) in the "${tabLabel}" tab? This may take some time.`,
       onConfirm: async () => {
         setConfirmDialog(null);
         gStore.isRecoveringAll = true;
         setIsRecoveringAll(true);
         notifyGlobalListeners();
         for (const packet of notFoundPackets) {
-          await runRestore(packet);
+          await runRestore(packet, currentTab);
           // Small delay
           await new Promise(r => setTimeout(r, 1000));
         }
@@ -302,12 +352,20 @@ export function AutomationClient() {
     });
   }
 
-  async function runRestore(packet: RestorePacket) {
+  async function runRestore(packet: RestorePacket, tabOverride?: TabType) {
     if (!packet.ticketId || !packet.ticketNumber) return;
     const key = packet.id;
+    const existingJob = globalJobs.get(key) ?? jobs.get(key);
+    const originTab: TabType =
+      tabOverride ??
+      existingJob?.originTab ??
+      (packet.restorationNotFound
+        ? (isMisamisOriental(packet) ? "not_found" : "not_found_other")
+        : "pending");
 
-    updateGlobalJobs(key, { phase: "searching" });
-    setJobs(prev => { const next = new Map(prev); next.set(key, { phase: "searching" }); return next; });
+    const searchingState: JobState = { phase: "searching", originTab };
+    updateGlobalJobs(key, searchingState);
+    setJobs(prev => { const next = new Map(prev); next.set(key, searchingState); return next; });
 
     const TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes per packet
     const controller = new AbortController();
@@ -343,6 +401,7 @@ export function AutomationClient() {
           packetName: payload.packetName ?? "",
           alreadyUploaded: payload.alreadyUploaded ?? false,
           commentPosted: false,
+          originTab,
         };
         updateGlobalJobs(key, nextState);
         setJobs(prev => { const next = new Map(prev); next.set(key, nextState); return next; });
@@ -351,6 +410,7 @@ export function AutomationClient() {
           phase: "error",
           steps: steps.length > 0 ? steps : [{ text: `❌ ${payload.error || "Unknown error"}`, type: "error" }],
           error: payload.error || "Unknown error",
+          originTab,
         };
         updateGlobalJobs(key, nextState);
         setJobs(prev => { const next = new Map(prev); next.set(key, nextState); return next; });
@@ -365,6 +425,7 @@ export function AutomationClient() {
         phase: "error",
         steps: [{ text: `❌ ${msg}`, type: "error" }],
         error: msg,
+        originTab,
       };
       updateGlobalJobs(key, nextState);
       setJobs(prev => { const next = new Map(prev); next.set(key, nextState); return next; });
@@ -552,35 +613,15 @@ export function AutomationClient() {
 
   const filteredBasePackets = restorePackets.filter(matchesSearchAndProvince);
 
-  const completedPacketsCount = filteredBasePackets.filter(p => {
-    const job = jobs.get(p.id);
-    return job?.phase === "success" && job.commentPosted === true;
-  }).length;
-  
-  const unrecoverablePacketsCount = filteredBasePackets.filter(p => {
-    const job = jobs.get(p.id);
-    return job?.phase === "error" && job.unrecoverableTagged;
-  }).length;
-  
-  const notFoundMisOrCount = filteredBasePackets.filter(p => {
-    const job = jobs.get(p.id);
-    const isUnrecoverable = job?.phase === "error" && job.unrecoverableTagged;
-    const isNotFound = job?.phase === "error" && !isUnrecoverable && (job.error?.includes("not found") || p.restorationNotFound);
-    return isNotFound && isMisamisOriental(p);
-  }).length;
-
-  const notFoundOtherCount = filteredBasePackets.filter(p => {
-    const job = jobs.get(p.id);
-    const isUnrecoverable = job?.phase === "error" && job.unrecoverableTagged;
-    const isNotFound = job?.phase === "error" && !isUnrecoverable && (job.error?.includes("not found") || p.restorationNotFound);
-    return isNotFound && !isMisamisOriental(p);
-  }).length;
-
-  const pendingPacketsCount = filteredBasePackets.length - completedPacketsCount - notFoundMisOrCount - notFoundOtherCount - unrecoverablePacketsCount;
+  const completedPacketsCount = filteredBasePackets.filter(p => getPacketTab(p, jobs.get(p.id)) === "completed").length;
+  const unrecoverablePacketsCount = filteredBasePackets.filter(p => getPacketTab(p, jobs.get(p.id)) === "unrecoverable").length;
+  const notFoundMisOrCount = filteredBasePackets.filter(p => getPacketTab(p, jobs.get(p.id)) === "not_found").length;
+  const notFoundOtherCount = filteredBasePackets.filter(p => getPacketTab(p, jobs.get(p.id)) === "not_found_other").length;
+  const pendingPacketsCount = filteredBasePackets.filter(p => getPacketTab(p, jobs.get(p.id)) === "pending").length;
 
   const pendingToRecoverCount = filteredBasePackets.filter(p => {
     const job = jobs.get(p.id);
-    return !job || job.phase === "idle";
+    return getPacketTab(p, job) === "pending" && (!job || job.phase === "idle");
   }).length;
   
   const pendingToPostCount = filteredBasePackets.filter(p => {
@@ -595,22 +636,17 @@ export function AutomationClient() {
   // ──────────────────────────────────────────────
 
   const displayPackets = filteredBasePackets.filter(p => {
-    const job = jobs.get(p.id);
-    const isCompleted = job?.phase === "success" && job.commentPosted === true;
-    const isUnrecoverable = job?.phase === "error" && job.unrecoverableTagged;
-    const isNotFound = job?.phase === "error" && !isUnrecoverable && (job.error?.includes("not found") || p.restorationNotFound);
-    const isMisOr = isMisamisOriental(p);
-
-    if (activeTab === "completed") return isCompleted;
-    if (activeTab === "not_found") return isNotFound && isMisOr;
-    if (activeTab === "not_found_other") return isNotFound && !isMisOr;
-    if (activeTab === "unrecoverable") return isUnrecoverable;
-    return !isCompleted && !isNotFound && !isUnrecoverable; // Pending tab
+    return getPacketTab(p, jobs.get(p.id)) === activeTab;
   }).sort((a, b) => {
     if (sortBy === "trn_asc") return a.packetCode.localeCompare(b.packetCode);
     if (sortBy === "trn_desc") return b.packetCode.localeCompare(a.packetCode);
     return 0; // Default uses the original order from restorePackets
   });
+
+  const retryableInCurrentTabCount = displayPackets.filter(p => {
+    const job = jobs.get(p.id);
+    return !job || (job.phase === "error" && !job.unrecoverableTagged) || job.phase === "idle";
+  }).length;
 
   return (
     <>
@@ -630,16 +666,17 @@ export function AutomationClient() {
           <div style={{ display: "flex", gap: 10 }}>
             
             {(activeTab === "not_found" || activeTab === "not_found_other") && (
-              <button className="btn btn-primary" onClick={() => retryAllNotFoundPackets(displayPackets)} disabled={isRecoveringAll || listLoading || displayPackets.length === 0}>
+              <button className="btn btn-primary" onClick={() => retryAllNotFoundPackets(displayPackets)} disabled={isRecoveringAll || listLoading || retryableInCurrentTabCount === 0}>
                 {isRecoveringAll ? <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> : <RefreshCw size={16} />}
-                {isRecoveringAll ? "Retrying..." : "Retry All"}
+                {isRecoveringAll ? "Retrying..." : `Retry All (${retryableInCurrentTabCount})`}
               </button>
             )}
-            <button className="btn btn-primary" onClick={recoverAllPendingPackets} disabled={isRecoveringAll || listLoading || pendingToRecoverCount === 0}>
-
-              {isRecoveringAll ? <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> : <HardDriveDownload size={16} />}
-              {isRecoveringAll ? "Recovering..." : "Recover All"}
-            </button>
+            {activeTab === "pending" && (
+              <button className="btn btn-primary" onClick={recoverAllPendingPackets} disabled={isRecoveringAll || listLoading || pendingToRecoverCount === 0}>
+                {isRecoveringAll ? <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> : <HardDriveDownload size={16} />}
+                {isRecoveringAll ? "Recovering..." : `Recover All (${pendingToRecoverCount})`}
+              </button>
+            )}
             <button className="btn btn-primary" onClick={postAllPendingComments} disabled={isPostingAll || listLoading || pendingToPostCount === 0}>
               {isPostingAll ? <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> : <MessageSquare size={16} />}
               {isPostingAll ? "Posting..." : "Post All Comments"}
@@ -992,7 +1029,8 @@ export function AutomationClient() {
                                   <button
                                     className="btn"
                                     style={{ fontSize: "0.75rem", padding: "3px 10px" }}
-                                    onClick={() => resetJob(packet.id)}
+                                    disabled={isRecoveringAll}
+                                    onClick={() => runRestore(packet, activeTab)}
                                   >
                                     Retry
                                   </button>

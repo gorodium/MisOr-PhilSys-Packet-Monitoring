@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { handleApiError, ok, fail } from "@/lib/api";
 import { getStoredSettings } from "@/lib/settings";
-import { searchPacketOnNas, copyPacketToDestination, PacketSearchResult } from "@/lib/nas-client";
+import { searchPacketOnNas, copyPacketToDestination, verifyPacketAtNasPath, PacketSearchResult } from "@/lib/nas-client";
 import { NAS_SEARCH_HOSTS, NAS_DESTINATION_HOST, NAS_DESTINATION_ROOT } from "@/lib/nas-config";
 import { prisma } from "@/lib/prisma";
 import { verifySession } from "@/lib/auth";
@@ -84,7 +84,41 @@ export async function POST(req: NextRequest) {
     let foundResult: PacketSearchResult | null = null;
     let foundOnHost = null;
 
+    // Fast path: check if this TRN was manually uploaded via Upload Packets
+    const trnDigits = trn.replace(/\D/g, "");
+    const uploadedRecord = await prisma.uploadedPacket.findFirst({
+      where: {
+        OR: [
+          { trn: trnDigits },
+          { trn: { contains: trnDigits } },
+          { filename: { contains: trnDigits } }
+        ]
+      },
+      orderBy: { createdAt: "desc" }
+    });
+
+    if (uploadedRecord?.nasPath) {
+      log(`\n📦 Found in Upload Packets history (${uploadedRecord.nasPath}). Verifying on ${NAS_DESTINATION_HOST.name}...`);
+      try {
+        const verified = await verifyPacketAtNasPath(
+          NAS_DESTINATION_HOST,
+          nasUsername,
+          nas1Password,
+          uploadedRecord.nasPath,
+          (msg) => log(`   ${msg}`)
+        );
+        if (verified) {
+          foundResult = verified;
+          foundOnHost = NAS_DESTINATION_HOST;
+          log(`✅ Found uploaded packet: ${foundResult.remotePath} (${(foundResult.size / 1024).toFixed(1)} KB)`);
+        }
+      } catch (err: any) {
+        log(`⚠️ Could not verify uploaded path directly: ${err?.message ?? String(err)}`);
+      }
+    }
+
     for (const host of NAS_SEARCH_HOSTS) {
+      if (foundResult && foundOnHost) break;
       log(`\nTrying ${host.name} (${host.host})...`);
 
       try {

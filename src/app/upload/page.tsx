@@ -1,9 +1,24 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { UploadCloud, CheckCircle, XCircle, Loader2, FileArchive, Play, Trash2, Calendar, MapPin, Database } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { UploadCloud, CheckCircle, XCircle, Loader2, FileArchive, Play, Trash2, Calendar, MapPin, Database, RefreshCw, HardDriveDownload, ExternalLink } from "lucide-react";
 
 type UploadStatus = "pending" | "uploading" | "success" | "error";
+
+interface SyncedRestorationPacket {
+  id: string;
+  packetCode: string;
+  requiredInitialTrn: string | null;
+  matchedTrn: string;
+  ticketId: string;
+  ticketNumber: string;
+  proLptFolder: string;
+  province: string;
+  restorationUploaded: boolean;
+  restorationCommented: boolean;
+  wasNotFound: boolean;
+}
 
 interface FileUpload {
   id: string;
@@ -12,6 +27,8 @@ interface FileUpload {
   progress: number;
   message?: string;
   nasPath?: string;
+  alreadyExists?: boolean;
+  matchedRestorationPackets?: SyncedRestorationPacket[];
 }
 
 interface UploadHistoryRecord {
@@ -28,7 +45,18 @@ interface KPICard {
   count: number;
 }
 
+function clearGlobalAutomationJobForPacket(packetId: string) {
+  const store = (globalThis as any).__automationGlobalStore;
+  if (store?.jobs) {
+    store.jobs.delete(packetId);
+    if (store.listeners) {
+      store.listeners.forEach((l: () => void) => l());
+    }
+  }
+}
+
 export default function UploadPage() {
+  const router = useRouter();
   const [uploads, setUploads] = useState<FileUpload[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -36,6 +64,12 @@ export default function UploadPage() {
   const [history, setHistory] = useState<UploadHistoryRecord[]>([]);
   const [kpiCards, setKpiCards] = useState<KPICard[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
+
+  const [syncingRestoration, setSyncingRestoration] = useState(false);
+  const [syncedMatches, setSyncedMatches] = useState<SyncedRestorationPacket[] | null>(null);
+  const [processingRestoreIds, setProcessingRestoreIds] = useState<Set<string>>(new Set());
+  const [processedRestoreResults, setProcessedRestoreResults] = useState<Record<string, { ok: boolean; msg: string }>>({});
+  const [isProcessingAllMatched, setIsProcessingAllMatched] = useState(false);
 
   const fetchHistory = async () => {
     try {
@@ -81,7 +115,7 @@ export default function UploadPage() {
   };
 
   const addFiles = (files: File[]) => {
-    const zipFiles = files.filter(f => f.name.toLowerCase().endsWith('.zip'));
+    const zipFiles = files.filter(f => f.name.toLowerCase().endsWith(".zip"));
     
     if (zipFiles.length < files.length) {
       alert(`Ignored ${files.length - zipFiles.length} non-ZIP files.`);
@@ -136,13 +170,33 @@ export default function UploadPage() {
       xhr.send(formData);
       
       const response: any = await promise;
-      
+      const matched: SyncedRestorationPacket[] = response.matchedRestorationPackets || [];
+      matched.forEach(m => {
+        if (!m.restorationUploaded || !m.restorationCommented) {
+          clearGlobalAutomationJobForPacket(m.id);
+        }
+      });
+
       setUploads(prev => prev.map(u => u.id === uploadId ? { 
         ...u, 
         status: "success", 
         progress: 100,
-        nasPath: response.path 
+        nasPath: response.path,
+        alreadyExists: response.alreadyExists,
+        matchedRestorationPackets: matched
       } : u));
+
+      if (matched.length > 0) {
+        setSyncedMatches(prev => {
+          const existing = prev ? [...prev] : [];
+          for (const m of matched) {
+            if (!existing.some(x => x.id === m.id)) {
+              existing.push(m);
+            }
+          }
+          return existing;
+        });
+      }
 
       // Refresh history silently
       fetchHistory();
@@ -161,6 +215,104 @@ export default function UploadPage() {
     pendingUploads.forEach(u => uploadFile(u.id, u.file));
   };
 
+  const syncWithBackendRestoration = async (trnsToSync?: string[]) => {
+    setSyncingRestoration(true);
+    try {
+      const res = await fetch("/api/upload-packet/sync-restoration", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(trnsToSync && trnsToSync.length > 0 ? { trns: trnsToSync } : {})
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to sync with Backend Restoration");
+      }
+      const matched: SyncedRestorationPacket[] = data.matchedPackets || [];
+      matched.forEach(m => {
+        if (!m.restorationUploaded || !m.restorationCommented) {
+          clearGlobalAutomationJobForPacket(m.id);
+        }
+      });
+      setSyncedMatches(matched);
+    } catch (err: any) {
+      alert(err?.message || "Failed to sync with Backend Restoration");
+    } finally {
+      setSyncingRestoration(false);
+    }
+  };
+
+  const processSingleMatchedPacket = async (pkt: SyncedRestorationPacket) => {
+    setProcessingRestoreIds(prev => new Set(prev).add(pkt.id));
+    try {
+      const res = await fetch("/api/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          packetId: pkt.id,
+          trn: pkt.requiredInitialTrn || pkt.packetCode,
+          ticketId: pkt.ticketId,
+          ticketNumber: pkt.ticketNumber,
+          proLptFolder: pkt.proLptFolder || undefined,
+          province: pkt.province || undefined
+        })
+      });
+      const payload = await res.json();
+      if (payload.success) {
+        setProcessedRestoreResults(prev => ({
+          ...prev,
+          [pkt.id]: { ok: true, msg: `Uploaded to ${payload.destFolder}` }
+        }));
+        setSyncedMatches(prev =>
+          prev ? prev.map(m => m.id === pkt.id ? { ...m, restorationUploaded: true, wasNotFound: false } : m) : prev
+        );
+        const store = (globalThis as any).__automationGlobalStore;
+        if (store?.jobs) {
+          store.jobs.set(pkt.id, {
+            phase: "success",
+            steps: (payload.steps || []).map((s: string) => ({ text: s, type: "ok" })),
+            uploadedTo: payload.uploadedTo ?? "",
+            destFolder: payload.destFolder ?? "",
+            packetName: payload.packetName ?? "",
+            alreadyUploaded: payload.alreadyUploaded ?? false,
+            commentPosted: false,
+            originTab: "pending"
+          });
+          store.listeners?.forEach((l: () => void) => l());
+        }
+      } else {
+        setProcessedRestoreResults(prev => ({
+          ...prev,
+          [pkt.id]: { ok: false, msg: payload.error || "Failed to process" }
+        }));
+      }
+    } catch (err: any) {
+      setProcessedRestoreResults(prev => ({
+        ...prev,
+        [pkt.id]: { ok: false, msg: err?.message || "Network error" }
+      }));
+    } finally {
+      setProcessingRestoreIds(prev => {
+        const next = new Set(prev);
+        next.delete(pkt.id);
+        return next;
+      });
+    }
+  };
+
+  const processAllMatchedPackets = async () => {
+    if (!syncedMatches || isProcessingAllMatched) return;
+    const toProcess = syncedMatches.filter(m => !m.restorationUploaded || !m.restorationCommented);
+    if (toProcess.length === 0) return;
+
+    setIsProcessingAllMatched(true);
+    for (const pkt of toProcess) {
+      if (!pkt.restorationUploaded) {
+        await processSingleMatchedPacket(pkt);
+      }
+    }
+    setIsProcessingAllMatched(false);
+  };
+
   const removeUpload = (id: string) => {
     setUploads(prev => prev.filter(u => u.id !== id));
   };
@@ -171,17 +323,164 @@ export default function UploadPage() {
 
   const pendingCount = uploads.filter(u => u.status === "pending" || u.status === "error").length;
   const uploadingCount = uploads.filter(u => u.status === "uploading").length;
+  const uncompletedMatchedCount = (syncedMatches || []).filter(m => !m.restorationUploaded).length;
 
   return (
     <div style={{ padding: "32px", maxWidth: "1200px", margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "24px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "24px", flexWrap: "wrap", gap: "12px" }}>
         <div>
           <h1 style={{ fontSize: "24px", fontWeight: 700, margin: "0 0 8px 0", color: "var(--text)" }}>Upload Packets to NAS</h1>
           <p style={{ color: "var(--muted)", margin: 0, fontSize: "14px" }}>
             Upload packet ZIP files to the NAS. The destination folder (PRO-LPT) will be automatically determined from the TRN in the filename.
           </p>
         </div>
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+          <button
+            onClick={() => syncWithBackendRestoration()}
+            disabled={syncingRestoration}
+            className="btn btn-primary"
+            style={{ display: "flex", alignItems: "center", gap: "8px" }}
+            title="Check uploaded packets against the Backend Restoration list and move matching packets to Pending"
+          >
+            {syncingRestoration ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
+            {syncingRestoration ? "Syncing with Backend Restoration..." : "Sync to Backend Restoration"}
+          </button>
+        </div>
       </div>
+
+      {/* Synced Backend Restoration Panel */}
+      {syncedMatches !== null && (
+        <div style={{
+          backgroundColor: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderLeft: "4px solid var(--accent, #155e75)",
+          borderRadius: "12px",
+          overflow: "hidden",
+          boxShadow: "var(--shadow)",
+          marginBottom: "28px"
+        }}>
+          <div style={{
+            padding: "14px 20px",
+            borderBottom: "1px solid var(--border)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "12px",
+            backgroundColor: "rgba(21, 94, 117, 0.04)"
+          }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 600, color: "var(--text)", display: "flex", alignItems: "center", gap: "8px" }}>
+                <HardDriveDownload size={17} />
+                Backend Restoration Sync ({syncedMatches.length} matched packet{syncedMatches.length === 1 ? "" : "s"})
+              </h3>
+              <p style={{ margin: "4px 0 0 0", fontSize: "13px", color: "var(--muted)" }}>
+                {syncedMatches.length === 0
+                  ? "None of the uploaded packets currently match an active item on the Backend Restoration list."
+                  : "Matched packets have been synced to Backend Restoration (Pending). You can process them directly below or open Backend Restoration."}
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+              {uncompletedMatchedCount > 0 && (
+                <button
+                  onClick={processAllMatchedPackets}
+                  disabled={isProcessingAllMatched}
+                  className="btn btn-primary"
+                  style={{ display: "flex", alignItems: "center", gap: "6px" }}
+                >
+                  {isProcessingAllMatched ? <Loader2 size={15} className="spin" /> : <HardDriveDownload size={15} />}
+                  {isProcessingAllMatched ? "Processing..." : `Process All in Backend Restoration (${uncompletedMatchedCount})`}
+                </button>
+              )}
+              <button
+                onClick={() => router.push("/automation")}
+                className="btn"
+                style={{ display: "flex", alignItems: "center", gap: "6px" }}
+              >
+                <ExternalLink size={15} />
+                Open Backend Restoration
+              </button>
+              <button
+                onClick={() => setSyncedMatches(null)}
+                className="btn"
+                style={{ padding: "6px 10px", fontSize: "12px" }}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+
+          {syncedMatches.length > 0 && (
+            <div style={{ overflowX: "auto", maxHeight: "320px", overflowY: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                <thead>
+                  <tr style={{ backgroundColor: "#f8fafc", borderBottom: "1px solid var(--border)" }}>
+                    <th style={{ padding: "10px 16px", textAlign: "left", fontWeight: 600, color: "var(--muted)" }}>TRN</th>
+                    <th style={{ padding: "10px 16px", textAlign: "left", fontWeight: 600, color: "var(--muted)" }}>Ticket #</th>
+                    <th style={{ padding: "10px 16px", textAlign: "left", fontWeight: 600, color: "var(--muted)" }}>PRO-LPT / Province</th>
+                    <th style={{ padding: "10px 16px", textAlign: "left", fontWeight: 600, color: "var(--muted)" }}>Backend Restoration Status</th>
+                    <th style={{ padding: "10px 16px", textAlign: "right", fontWeight: 600, color: "var(--muted)" }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {syncedMatches.map(pkt => {
+                    const isProcessing = processingRestoreIds.has(pkt.id);
+                    const result = processedRestoreResults[pkt.id];
+                    return (
+                      <tr key={pkt.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                        <td style={{ padding: "10px 16px", fontFamily: "monospace", fontWeight: 600 }}>
+                          {pkt.requiredInitialTrn || pkt.packetCode}
+                          {pkt.requiredInitialTrn && (
+                            <div style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 400 }}>
+                              Original: {pkt.packetCode}
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ padding: "10px 16px", fontFamily: "monospace" }}>#{pkt.ticketNumber}</td>
+                        <td style={{ padding: "10px 16px" }}>
+                          <span style={{ background: "#dbeafe", color: "#1d4ed8", padding: "2px 6px", borderRadius: "4px", fontWeight: 600, fontSize: "11px", marginRight: "6px" }}>
+                            {pkt.proLptFolder}
+                          </span>
+                          <span style={{ color: "var(--muted)", fontSize: "12px" }}>{pkt.province}</span>
+                        </td>
+                        <td style={{ padding: "10px 16px" }}>
+                          {result ? (
+                            <span style={{ color: result.ok ? "#16a34a" : "#dc2626", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                              {result.ok ? <CheckCircle size={14} /> : <XCircle size={14} />}
+                              {result.msg}
+                            </span>
+                          ) : pkt.restorationUploaded ? (
+                            <span style={{ color: "#16a34a", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                              <CheckCircle size={14} /> {pkt.restorationCommented ? "Completed (Replied)" : "Uploaded to Ticket Folder"}
+                            </span>
+                          ) : (
+                            <span style={{ color: "#d97706", fontWeight: 600 }}>
+                              Synced to Pending {pkt.wasNotFound ? "(Moved from Not Found)" : ""}
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: "10px 16px", textAlign: "right" }}>
+                          {!pkt.restorationUploaded && (
+                            <button
+                              className="btn btn-primary"
+                              style={{ padding: "4px 12px", fontSize: "12px" }}
+                              disabled={isProcessing || isProcessingAllMatched}
+                              onClick={() => processSingleMatchedPacket(pkt)}
+                            >
+                              {isProcessing ? <Loader2 size={13} className="spin" /> : <HardDriveDownload size={13} />}
+                              {isProcessing ? "Processing..." : "Process Now"}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* KPI Cards */}
       {kpiCards.length > 0 && (
@@ -278,12 +577,28 @@ export default function UploadPage() {
             display: "flex", 
             alignItems: "center", 
             justifyContent: "space-between",
-            backgroundColor: "rgba(0,0,0,0.02)"
+            backgroundColor: "rgba(0,0,0,0.02)",
+            flexWrap: "wrap",
+            gap: "10px"
           }}>
             <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 600, color: "var(--text)" }}>
               Upload Queue ({uploads.length})
             </h3>
-            <div style={{ display: "flex", gap: "12px" }}>
+            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+              <button
+                onClick={() => {
+                  const queueTrns = uploads
+                    .map(u => u.file.name.match(/^(\d{29})/)?.[1] || "")
+                    .filter(Boolean);
+                  syncWithBackendRestoration(queueTrns);
+                }}
+                disabled={syncingRestoration}
+                className="btn"
+                style={{ display: "flex", alignItems: "center", gap: "6px" }}
+              >
+                {syncingRestoration ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
+                Sync Queue to Backend Restoration
+              </button>
               <button 
                 onClick={clearCompleted}
                 className="btn btn-outline"
@@ -329,11 +644,30 @@ export default function UploadPage() {
                     <div style={{ width: "100%", backgroundColor: "var(--border)", borderRadius: "4px", height: "6px", marginBottom: "6px", overflow: "hidden" }}>
                       <div style={{ height: "100%", backgroundColor: upload.status === 'error' ? '#ef4444' : upload.status === 'success' ? '#22c55e' : 'var(--primary)', width: `${upload.progress}%`, transition: "width 0.3s ease" }} />
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <div style={{ display: "flex", alignItems: "center", fontSize: "12px", gap: "6px" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+                      <div style={{ display: "flex", alignItems: "center", fontSize: "12px", gap: "8px", flexWrap: "wrap" }}>
                         {upload.status === 'pending' && <span style={{ color: "var(--muted)" }}>Ready to upload</span>}
                         {upload.status === 'uploading' && <span style={{ color: "var(--primary)", display: "flex", alignItems: "center", gap: "4px", fontWeight: 500 }}><Loader2 size={12} className="spin" /> Uploading {upload.progress}%</span>}
-                        {upload.status === 'success' && <span style={{ color: "#16a34a", display: "flex", alignItems: "center", gap: "4px", fontWeight: 500 }}><CheckCircle size={12} /> {upload.nasPath}</span>}
+                        {upload.status === 'success' && (
+                          <>
+                            <span style={{ color: "#16a34a", display: "flex", alignItems: "center", gap: "4px", fontWeight: 500 }}>
+                              <CheckCircle size={12} /> {upload.alreadyExists ? `Already on NAS (${upload.nasPath})` : upload.nasPath}
+                            </span>
+                            {upload.matchedRestorationPackets && upload.matchedRestorationPackets.length > 0 && (
+                              <span style={{
+                                backgroundColor: "#fef3c7",
+                                color: "#92400e",
+                                border: "1px solid #fde68a",
+                                borderRadius: "999px",
+                                padding: "2px 8px",
+                                fontSize: "11px",
+                                fontWeight: 600
+                              }}>
+                                🔗 Matched Backend Restoration (Ticket #{upload.matchedRestorationPackets.map(m => m.ticketNumber).join(", #")}) — Synced to Pending
+                              </span>
+                            )}
+                          </>
+                        )}
                         {upload.status === 'error' && <span style={{ color: "#dc2626", display: "flex", alignItems: "center", gap: "4px", fontWeight: 500 }}><XCircle size={12} /> {upload.message}</span>}
                       </div>
                       {upload.status !== 'uploading' && (
@@ -364,15 +698,28 @@ export default function UploadPage() {
           display: "flex", 
           alignItems: "center", 
           justifyContent: "space-between",
-          backgroundColor: "rgba(0,0,0,0.02)"
+          backgroundColor: "rgba(0,0,0,0.02)",
+          flexWrap: "wrap",
+          gap: "8px"
         }}>
           <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 600, color: "var(--text)", display: "flex", alignItems: "center", gap: "8px" }}>
             <Database size={16} /> Upload History
           </h3>
-          <button onClick={fetchHistory} className="btn btn-outline" style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 12px", fontSize: "13px" }}>
-            {loadingHistory ? <Loader2 size={14} className="spin" /> : <Play size={14} style={{ transform: "rotate(90deg)" }} />}
-            Refresh
-          </button>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <button
+              onClick={() => syncWithBackendRestoration()}
+              disabled={syncingRestoration}
+              className="btn"
+              style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 12px", fontSize: "13px" }}
+            >
+              {syncingRestoration ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
+              Sync History to Backend Restoration
+            </button>
+            <button onClick={fetchHistory} className="btn btn-outline" style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 12px", fontSize: "13px" }}>
+              {loadingHistory ? <Loader2 size={14} className="spin" /> : <Play size={14} style={{ transform: "rotate(90deg)" }} />}
+              Refresh
+            </button>
+          </div>
         </div>
         
         <div style={{ overflowX: "auto" }}>

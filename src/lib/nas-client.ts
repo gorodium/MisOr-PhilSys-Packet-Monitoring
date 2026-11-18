@@ -360,18 +360,58 @@ export async function searchPacketByMachineFolders(
         const results = await searchPacketsInFolder(sftp, folderPath, trnDigits, nasName, nasHost, 5, progressCallback);
         if (results.length > 0) return results;
       }
-      progressCallback?.(`Packet not found in ${proLptFolder}, stopping search on this NAS.`);
+      progressCallback?.(`Packet not found in ${proLptFolder} under ${root}.`);
     } else {
-      progressCallback?.(`Folder ${proLptFolder} not found on this NAS. Skipping.`);
+      progressCallback?.(`Folder ${proLptFolder} not found under ${root}.`);
     }
-    // If we had a proLptFolder hint but didn't find the packet, stop — don't do full BFS.
-    // Full BFS of the whole NAS would take 30+ minutes and is unlikely to help.
+
+    // Fallback: if searching from "/" and not found, also check "/Misamis Oriental/${proLptFolder}" (where manually uploaded packets are stored)
+    if (normalizePath(root) === "/") {
+      const misOrFolderMap = await findDirsByNames(sftp, [proLptFolder], "/Misamis Oriental", 2, progressCallback);
+      const misOrPaths = misOrFolderMap.get(proLptFolder) ?? [];
+      for (const folderPath of misOrPaths) {
+        if (folderPaths.includes(folderPath)) continue;
+        progressCallback?.(`Checking fallback folder ${folderPath}...`);
+        const results = await searchPacketsInFolder(sftp, folderPath, trnDigits, nasName, nasHost, 5, progressCallback);
+        if (results.length > 0) return results;
+      }
+    }
+
     return [];
   }
 
   // No proLptFolder hint — do a capped BFS search from root (max 200 dirs)
   progressCallback?.(`No folder hint, doing capped BFS search from ${root}...`);
   return searchPacketsInFolder(sftp, root, trnDigits, nasName, nasHost, 5, progressCallback);
+}
+
+export async function verifyPacketAtNasPath(
+  host: NasHost,
+  username: string,
+  password: string,
+  remotePath: string,
+  progressCallback?: (msg: string) => void
+): Promise<PacketSearchResult | null> {
+  const normalized = normalizePath(remotePath);
+  progressCallback?.(`Checking uploaded packet path ${normalized} on ${host.name}...`);
+  const { sftp, conn } = await createSftp(host, username, password);
+  try {
+    const attr = await statPath(sftp, normalized);
+    if (attr && isFile(attr)) {
+      const parts = normalized.split("/");
+      const packetName = parts[parts.length - 1] || "packet.zip";
+      return {
+        nasName: host.name,
+        host: host.host,
+        packetName,
+        remotePath: normalized,
+        size: attr.size ?? 0,
+      };
+    }
+    return null;
+  } finally {
+    try { conn.end(); } catch {}
+  }
 }
 
 // ──────────────────────────────────────────────

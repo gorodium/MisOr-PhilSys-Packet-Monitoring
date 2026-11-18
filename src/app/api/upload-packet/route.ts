@@ -4,6 +4,7 @@ import { NAS_DESTINATION_HOST } from "@/lib/nas-config";
 import { uploadBufferToNas } from "@/lib/nas-client";
 import { machineFolderForPacket, machineProvinceForPacket } from "@/lib/packet-normalizer";
 import { prisma } from "@/lib/prisma";
+import { syncTrnsWithBackendRestoration } from "@/app/api/upload-packet/sync-restoration/route";
 
 export const dynamic = "force-dynamic";
 
@@ -45,35 +46,61 @@ export async function POST(req: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    const result = await uploadBufferToNas(
-      NAS_DESTINATION_HOST,
-      nasUsername,
-      nas1Password,
-      buffer,
-      destFolder,
-      file.name
-    );
+    let uploadedPath = `${destFolder}/${file.name}`;
+    let alreadyExists = false;
 
-    await prisma.uploadedPacket.create({
-      data: {
-        trn,
-        filename: file.name,
-        nasPath: result.path || `${destFolder}/${file.name}`,
-        province
+    try {
+      const result = await uploadBufferToNas(
+        NAS_DESTINATION_HOST,
+        nasUsername,
+        nas1Password,
+        buffer,
+        destFolder,
+        file.name
+      );
+      uploadedPath = result.path || uploadedPath;
+    } catch (uploadErr: any) {
+      if (uploadErr?.message === "Packet already uploaded") {
+        alreadyExists = true;
+      } else {
+        throw uploadErr;
       }
-    });
+    }
 
-    const { verifySession } = await import("@/lib/auth");
-    const session = await verifySession();
-    const { writeActivity } = await import("@/lib/activity");
-    await writeActivity({
-      type: "MANUAL_UPLOAD",
-      actor: session?.username || "System",
-      message: `${session?.username || "System"} manually uploaded packet ${file.name} to NAS`,
-      metadata: { trn, filename: file.name, province }
+    const existingRecord = await prisma.uploadedPacket.findFirst({
+      where: { trn }
     });
+    if (!existingRecord) {
+      await prisma.uploadedPacket.create({
+        data: {
+          trn,
+          filename: file.name,
+          nasPath: uploadedPath,
+          province
+        }
+      });
+    }
 
-    return NextResponse.json({ success: true, path: result.path });
+    if (!alreadyExists) {
+      const { verifySession } = await import("@/lib/auth");
+      const session = await verifySession();
+      const { writeActivity } = await import("@/lib/activity");
+      await writeActivity({
+        type: "MANUAL_UPLOAD",
+        actor: session?.username || "System",
+        message: `${session?.username || "System"} manually uploaded packet ${file.name} to NAS`,
+        metadata: { trn, filename: file.name, province }
+      });
+    }
+
+    const syncResult = await syncTrnsWithBackendRestoration([trn]);
+
+    return NextResponse.json({
+      success: true,
+      alreadyExists,
+      path: uploadedPath,
+      matchedRestorationPackets: syncResult.matchedPackets
+    });
   } catch (error: any) {
     console.error("Upload error:", error);
     return NextResponse.json({ success: false, error: error.message || "Internal server error" }, { status: 500 });
