@@ -223,6 +223,14 @@ export function AutomationClient() {
       });
 
       setRestorePackets(packets);
+      for (const p of packets) {
+        if (!newJobs.has(p.id)) {
+          const existing = globalJobs.get(p.id);
+          if (existing && existing.phase !== "searching" && existing.phase === "error" && !p.restorationNotFound) {
+            globalJobs.delete(p.id);
+          }
+        }
+      }
       for (const [k, v] of newJobs) {
         const existing = globalJobs.get(k);
         if (!existing) {
